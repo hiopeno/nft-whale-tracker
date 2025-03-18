@@ -1,5 +1,8 @@
 # Maven编译目录
 target/
+/target
+/target/
+/root/nft-whale-tracker/target/
 
 # 日志文件
 *.log
@@ -17,3 +20,5 @@ nft-tracker.log
 # 系统文件
 .DS_Store
 Thumbs.db
+
+target/*

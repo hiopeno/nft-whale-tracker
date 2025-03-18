@@ -9,6 +9,11 @@ YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # 无颜色
 
+# Kafka配置
+KAFKA_HOME="/opt/software/kafka_2.12-3.6.1"
+KAFKA_TOPIC="NFT_TRANSACTIONS"
+KAFKA_BOOTSTRAP_SERVER="192.168.254.133:9092"
+
 # 显示帮助信息
 show_help() {
     echo -e "${BLUE}用法:${NC} $0 [选项]"
@@ -20,6 +25,7 @@ show_help() {
     echo "  -n, --collections N 设置收藏集数量（默认10）"
     echo "  -b, --boot         使用Spring Boot JAR运行（默认）"
     echo "  -s, --standard     使用标准JAR运行"
+    echo "  -k, --clean-kafka  清空Kafka主题数据后再启动"
     echo "  -h, --help         显示此帮助信息"
     echo
     echo -e "${BLUE}示例:${NC}"
@@ -27,7 +33,45 @@ show_help() {
     echo "  $0 -r -i 2000      使用2000毫秒间隔运行（不编译）"
     echo "  $0 -c              仅编译不运行"
     echo "  $0 -s -i 500       使用标准JAR运行，间隔500毫秒"
+    echo "  $0 -k              清空Kafka数据后运行"
     echo
+}
+
+# 清空Kafka主题数据
+clean_kafka_topic() {
+    echo -e "${YELLOW}正在清空Kafka主题 ${KAFKA_TOPIC} 的数据...${NC}"
+
+    # 检查Kafka安装目录是否存在
+    if [ ! -d "$KAFKA_HOME" ]; then
+        echo -e "${RED}错误: Kafka安装目录不存在: $KAFKA_HOME${NC}"
+        return 1
+    fi
+
+    # 检查主题是否存在
+    TOPIC_EXISTS=$($KAFKA_HOME/bin/kafka-topics.sh --list --bootstrap-server $KAFKA_BOOTSTRAP_SERVER | grep -w "$KAFKA_TOPIC")
+    
+    if [ -n "$TOPIC_EXISTS" ]; then
+        echo "主题 $KAFKA_TOPIC 存在，正在删除..."
+        $KAFKA_HOME/bin/kafka-topics.sh --delete --topic $KAFKA_TOPIC --bootstrap-server $KAFKA_BOOTSTRAP_SERVER
+        
+        # 等待删除完成
+        echo "等待主题删除完成..."
+        sleep 3
+    else
+        echo "主题 $KAFKA_TOPIC 不存在，将创建新主题"
+    fi
+    
+    # 创建新主题
+    echo "创建新主题 $KAFKA_TOPIC..."
+    $KAFKA_HOME/bin/kafka-topics.sh --create --topic $KAFKA_TOPIC --bootstrap-server $KAFKA_BOOTSTRAP_SERVER --partitions 1 --replication-factor 1
+    
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}Kafka主题 $KAFKA_TOPIC 已清空并重新创建!${NC}"
+        return 0
+    else
+        echo -e "${RED}清空Kafka主题失败!${NC}"
+        return 1
+    fi
 }
 
 # 默认参数
@@ -36,6 +80,7 @@ RUN=true
 INTERVAL=1000
 COLLECTIONS=10
 USE_STANDARD_JAR=false
+CLEAN_KAFKA=false
 
 # 解析命令行参数
 while [[ $# -gt 0 ]]; do
@@ -66,6 +111,10 @@ while [[ $# -gt 0 ]]; do
             USE_STANDARD_JAR=true
             shift
             ;;
+        -k|--clean-kafka)
+            CLEAN_KAFKA=true
+            shift
+            ;;
         -h|--help)
             show_help
             exit 0
@@ -90,6 +139,14 @@ if [ "$COMPILE" = true ] && ! command -v mvn &> /dev/null; then
     echo -e "${RED}错误: Maven未安装${NC}"
     echo "请安装Maven 3.6+后再运行此脚本"
     exit 1
+fi
+
+# 清空Kafka主题
+if [ "$CLEAN_KAFKA" = true ]; then
+    clean_kafka_topic
+    if [ $? -ne 0 ]; then
+        echo -e "${YELLOW}警告: Kafka主题清理失败，但将继续执行...${NC}"
+    fi
 fi
 
 # 编译项目
