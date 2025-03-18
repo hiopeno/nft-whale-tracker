@@ -1,0 +1,8 @@
+/root/nft-whale-tracker/src/main/java/org/bigdatatechcir/whale/model/NFTAlert.java
+/root/nft-whale-tracker/src/main/java/org/bigdatatechcir/whale/util/RandomDataUtil.java
+/root/nft-whale-tracker/src/main/java/org/bigdatatechcir/whale/model/WhaleWallet.java
+/root/nft-whale-tracker/src/main/java/org/bigdatatechcir/whale/NFTDataGeneratorApplication.java
+/root/nft-whale-tracker/src/main/java/org/bigdatatechcir/whale/model/NFT.java
+/root/nft-whale-tracker/src/main/java/org/bigdatatechcir/whale/generator/NFTDataGenerator.java
+/root/nft-whale-tracker/src/main/java/org/bigdatatechcir/whale/model/NFTCollection.java
+/root/nft-whale-tracker/src/main/java/org/bigdatatechcir/whale/model/NFTTransaction.java
