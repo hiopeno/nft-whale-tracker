@@ -22,3 +22,6 @@ nft-tracker.log
 Thumbs.db
 
 target/*
+target/classes/*
+restart_jobs.sh
+start_all.sh
