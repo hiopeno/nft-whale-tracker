@@ -25,3 +25,4 @@ target/*
 target/classes/*
 restart_jobs.sh
 start_all.sh
+nft-tracker.log
