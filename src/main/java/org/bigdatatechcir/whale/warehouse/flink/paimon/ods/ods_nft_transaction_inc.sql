@@ -47,6 +47,7 @@ CREATE TABLE kafka_nft_transactions (
     'value.json.fail-on-missing-field' = 'false'
 );
 
+/* 每次运行时，都要创建Paimon Catalog */
 -- 创建Paimon Catalog
 CREATE CATALOG paimon_hive WITH (
     'type' = 'paimon',
