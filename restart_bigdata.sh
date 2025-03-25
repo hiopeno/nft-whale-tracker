@@ -12,6 +12,7 @@ HIVE_HOME=/opt/software/apache-hive-3.1.3-bin
 ZOOKEEPER_HOME=/opt/software/zookeeper-3.9.1
 KAFKA_HOME=/opt/software/kafka_2.12-3.6.1
 FLINK_HOME=/opt/software/flink-1.18.1
+DINKY_HOME=/opt/software/dinky-1.2.2
 # KAFKA_UI_HOME=/opt/software/kafka-ui  # 删除Kafka UI目录设置，因为使用Docker
 
 # 函数定义：打印带颜色的消息
@@ -52,6 +53,17 @@ kill_sql_clients() {
 # 函数定义：停止所有服务
 stop_all_services() {
     print_message "开始停止所有服务..." $YELLOW
+
+    # 停止Dinky
+    print_message "停止Dinky服务..." $YELLOW
+    if check_service "dinky"; then
+        cd $DINKY_HOME
+        ./auto.sh stop
+        sleep 3
+        print_message "Dinky服务已停止" $GREEN
+    else
+        print_message "Dinky服务未运行" $GREEN
+    fi
 
     # 停止Flink
     print_message "停止Flink服务..." $YELLOW
@@ -212,6 +224,19 @@ start_all_services() {
         exit 1
     fi
 
+    # 启动Dinky
+    print_message "启动Dinky服务..." $YELLOW
+    cd $DINKY_HOME
+    ./auto.sh start 1.18
+    sleep 5
+    if check_service "dinky"; then
+        print_message "Dinky服务已启动" $GREEN
+    else
+        print_message "Dinky服务启动失败" $RED
+        exit 1
+    fi
+    cd - > /dev/null
+
     print_message "所有服务已成功启动" $GREEN
     echo ""
 }
@@ -236,10 +261,11 @@ main() {
     # 检查所有服务
     print_message "所有大数据组件已重启完成。" $GREEN
     print_message "当前运行的相关进程:" $YELLOW
-    ps -ef | grep -E "zookeeper|kafka|hadoop|hive|flink|kafka-ui" | grep -v grep
+    ps -ef | grep -E "zookeeper|kafka|hadoop|hive|flink|kafka-ui|dinky" | grep -v grep
     echo ""
     print_message "Flink WebUI访问地址: http://192.168.254.133:8081" $GREEN
     print_message "Kafka UI访问地址: http://192.168.254.133:8080" $GREEN
+    print_message "Dinky访问地址: http://192.168.254.133:8888" $GREEN
 }
 
 # 执行主函数

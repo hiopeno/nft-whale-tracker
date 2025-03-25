@@ -15,24 +15,33 @@
 - **数据生成**：Java + Spring Boot
 - **消息队列**：Kafka
 - **数据处理**：Flink
-- **数据存储**：Iceberg/Hudi
-- **数据分析**：Doris
-- **数据可视化**：Superset
+- **数据存储**：Paimon
+- **数据分析**：SQL
+- **数据可视化**：待实现
 
 ## 项目结构
 
 ```
 nft-whale-tracker/
-├── src/                        # 源代码
+├── src/                             # 源代码
 │   ├── main/
 │   │   ├── java/
 │   │   │   └── org/bigdatatechcir/whale/
-│   │   │       ├── model/      # 数据模型
-│   │   │       ├── generator/  # 数据生成器
-│   │   │       ├── util/       # 工具类
-│   │   │       └── service/    # 服务类
-│   │   └── resources/          # 配置文件
-└── pom.xml                     # Maven配置
+│   │   │       ├── model/           # 数据模型
+│   │   │       ├── generator/       # 数据生成器
+│   │   │       ├── util/            # 工具类
+│   │   │       ├── warehouse/       # 数据仓库
+│   │   │       │   └── flink/       # Flink处理
+│   │   │       │       └── paimon/  # Paimon存储
+│   │   │       │           ├── ods/ # 原始数据层
+│   │   │       │           ├── dwd/ # 明细数据层
+│   │   │       │           ├── dim/ # 维度数据层
+│   │   │       │           ├── dws/ # 汇总数据层
+│   │   │       │           └── ads/ # 应用数据层
+│   │   │       └── NFTDataGeneratorApplication.java # 主应用
+│   │   └── resources/               # 配置文件
+├── lib/                             # 项目依赖
+└── pom.xml                          # Maven配置
 ```
 
 ## 安装和运行
@@ -42,7 +51,9 @@ nft-whale-tracker/
 - JDK 8+
 - Maven 3.6+
 - Kafka
-- Flink (可选)
+- Flink
+- Hadoop (HDFS)
+- Hive Metastore
 
 ### 构建和运行
 
