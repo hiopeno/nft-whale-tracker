@@ -167,3 +167,145 @@ SET 'table.exec.mini-batch.allow-latency' = '5s';
 SET 'table.exec.mini-batch.size' = '5000';
 ```
 
+## 7. 日期函数兼容性问题
+
+**错误现象**：
+```
+java.lang.RuntimeException: org.apache.calcite.sql.validate.SqlValidatorException: No match found for function signature TO_DAYS(<CHARACTER>)
+```
+
+**原因分析**：
+Flink SQL对日期函数的支持与常规SQL有较大差异。一些在MySQL等数据库中常用的函数如`TO_DAYS`、`DATE_SUB`等在Flink SQL中不被支持。
+
+**解决方案**：
+- 使用`TIMESTAMPDIFF`函数替代`TO_DAYS`函数计算日期差
+- 使用`TIMESTAMPADD`函数替代`DATE_SUB`/`DATE_ADD`函数进行日期加减
+- 注意确保所有时间戳参数使用相同的类型，通常是`TIMESTAMP(3)`
+
+**最佳实践**：
+```sql
+-- 错误写法
+TO_DAYS(CURRENT_TIMESTAMP) - TO_DAYS(CAST(wb.dt AS DATE)) <= 3
+-- 正确写法 
+TIMESTAMPDIFF(DAY, CAST(wb.dt AS DATE), CAST(CURRENT_TIMESTAMP AS DATE)) <= 3
+
+-- 错误写法
+DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 30 DAY)
+-- 正确写法
+TIMESTAMPADD(DAY, -30, CURRENT_TIMESTAMP)
+```
+
+## 8. 流处理模式下UPDATE语句限制
+
+**错误现象**：
+```
+org.apache.flink.table.api.TableException: UPDATE statement is not supported for streaming mode now.
+```
+
+**原因分析**：
+在Flink的流处理模式下，不支持直接使用UPDATE语句修改现有记录，这是Flink流处理语义的一个重要限制。
+
+**解决方案**：
+- 使用`INSERT`语句代替`UPDATE`，插入新记录来表示更新状态
+- 设计表结构时考虑更新场景，使用适当的主键确保后续INSERT能正确覆盖或补充现有记录
+- 对于状态更新场景，考虑使用两次`INSERT`：一次插入新记录，一次插入表示过期的记录
+
+**最佳实践**：
+```sql
+-- 错误写法
+UPDATE ads.ads_bargain_opportunity
+SET status = 'EXPIRED'
+WHERE status = 'ACTIVE' 
+  AND TIMESTAMPDIFF(HOUR, discovery_time, CURRENT_TIMESTAMP) > 24;
+
+-- 正确写法
+INSERT INTO ads.ads_bargain_opportunity
+SELECT
+  opportunity_id,
+  nft_id,
+  collection_id,
+  discovery_time,
+  current_price,
+  market_reference_price,
+  discount_percentage,
+  urgency_score,
+  investment_value_score,
+  risk_score,
+  opportunity_window,
+  marketplace,
+  'EXPIRED' AS status  -- 更新状态
+FROM ads.ads_bargain_opportunity
+WHERE status = 'ACTIVE' 
+  AND TIMESTAMPDIFF(HOUR, CAST(discovery_time AS TIMESTAMP(3)), CAST(CURRENT_TIMESTAMP AS TIMESTAMP(3))) > 24;
+```
+
+## 9. 时间戳精度一致性问题
+
+**错误现象**：
+操作混合了不同精度的时间戳类型，导致数据丢失或查询结果不准确。
+
+**原因分析**：
+Flink SQL中，不同精度的时间戳在进行比较或计算时可能导致隐蔽的问题。默认情况下，`TIMESTAMP`类型精度是0，但常用的是带毫秒精度的`TIMESTAMP(3)`。
+
+**解决方案**：
+- 在表定义中明确指定时间戳精度，如`TIMESTAMP(3)`
+- 在CAST操作中始终指定精度
+- 确保时间戳比较或计算中所有参数使用相同精度
+
+**最佳实践**：
+```sql
+-- 错误写法
+TIMESTAMPDIFF(HOUR, CAST(discovery_time AS TIMESTAMP), CAST(CURRENT_TIMESTAMP AS TIMESTAMP))
+
+-- 正确写法
+TIMESTAMPDIFF(HOUR, CAST(discovery_time AS TIMESTAMP(3)), CAST(CURRENT_TIMESTAMP AS TIMESTAMP(3)))
+```
+
+## 10. 数据依赖与层级关系管理
+
+**错误现象**：
+某些ADS层的表没有数据，即使SQL语法完全正确。
+
+**原因分析**：
+在多层数仓架构中，如果某层依赖的上游数据不存在或条件过滤过严，可能导致目标表没有数据，这不属于SQL语法错误，但会导致功能缺失。
+
+**解决方案**：
+- 设计明确的层级依赖关系，确保下游表的SQL只在上游数据就绪后执行
+- 实现数据检查机制，在作业启动前验证依赖表是否有足够数据
+- 对过滤条件进行合理调整，初期可适当放宽条件以确保数据流动
+
+**最佳实践**：
+```sql
+-- 检查依赖数据是否存在
+SELECT COUNT(1) FROM dwd.dwd_nft_transaction_inc;
+
+-- 放宽过滤条件
+-- 过于严格的条件
+WHERE current_price < avg_price * 0.8 
+  AND current_price > floor_price * 0.5
+  AND daily_transaction_count >= 3
+  AND investment_value_score > 0.5;
+  
+-- 放宽后的条件
+WHERE current_price < avg_price * 0.9
+  AND current_price > floor_price * 0.3
+  AND daily_transaction_count >= 1
+  AND investment_value_score > 0.3;
+```
+
+## 总结ADS层开发经验
+
+1. **函数替代意识**：熟悉Flink SQL支持的时间日期函数，知道标准SQL常用函数的对应替代方案
+
+2. **流式思维**：牢记Flink是流处理引擎，避免使用不支持的DML语句，转而使用流处理思维解决问题
+
+3. **数据质量监控**：建立完善的数据质量监控机制，及时发现数据断层或缺失问题
+
+4. **渐进开发**：从简单到复杂，先确保基础数据流通畅，再实现复杂计算逻辑
+
+5. **版本兼容性**：关注Flink版本间的差异，新版本可能支持更多功能或有不同的语法要求
+
+6. **资源管理**：合理配置并行度和任务槽资源，避免资源不足导致的作业失败
+
+通过妥善处理这些常见问题，我们成功构建了NFT鲸鱼追踪系统的ADS应用层，为用户提供了有价值的数据洞察。
+

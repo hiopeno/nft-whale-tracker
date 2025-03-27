@@ -102,7 +102,7 @@ NFT市场受巨鲸钱包（大额持有者）行为的显著影响，同时存�
   - 支持的交易类型
   - 市场特性和优势
 
-### 3.4 DWS层 (数据服务层) [下一阶段开发]
+### 3.4 DWS层 (数据服务层) [已完成]
 存储基于主题的汇总和计算结果，面向业务分析需求。
 
 **表结构**：
@@ -179,13 +179,13 @@ NFT市场受巨鲸钱包（大额持有者）行为的显著影响，同时存�
 - [x] 市场维度表(dim_marketplace_full)设计与实现
 - [x] 数据质量验证与测试
 
-### 4.3 第三阶段：DWS层开发 [计划中 - 预计3周]
-- [ ] 巨鲸行为汇总表实现
-- [ ] NFT价格汇总表实现
-- [ ] 市场活跃度汇总表实现
-- [ ] 数据聚合逻辑优化
-- [ ] 增量计算框架开发
-- [ ] 性能测试与优化
+### 4.3 第三阶段：DWS层开发 [已完成]
+- [x] 巨鲸行为汇总表实现
+- [x] NFT价格汇总表实现
+- [x] 市场活跃度汇总表实现
+- [x] 数据聚合逻辑优化
+- [x] 增量计算框架开发
+- [x] 性能测试与优化
 
 ### 4.4 第四阶段：ADS层与应用接口开发 [2周]
 - [ ] 巨鲸追踪看板实现
@@ -223,7 +223,8 @@ NFT市场受巨鲸钱包（大额持有者）行为的显著影响，同时存�
   - 开发钱包用户画像，识别交易行为模式
   - 实现市场平台分析，计算市场份额和增长趋势
 
-### 5.2 DWS层实现计划
+### 5.2 DWS层实现 [已完成]
+成功实现基于Flink SQL的实时数据聚合计算，主要成果包括：
 
 #### 5.2.1 巨鲸行为汇总表(dws_whale_behavior_1d)
 ```sql
@@ -245,14 +246,19 @@ CREATE TABLE IF NOT EXISTS dws.dws_whale_behavior_1d (
 ) WITH (
   'bucket' = '4',
   'bucket-key' = 'wallet_address',
-  'file.format' = 'parquet'
+  'file.format' = 'parquet',
+  'merge-engine' = 'deduplicate',
+  'changelog-producer' = 'input',
+  'compaction.min.file-num' = '5',
+  'compaction.max.file-num' = '50',
+  'compaction.target-file-size' = '256MB'
 );
 ```
 
-实现流程：
-1. 识别鲸鱼钱包
-2. 日级别交易聚合
-3. 交易模式分析
+已完成的实现内容：
+1. 识别鲸鱼钱包和交易行为
+2. 日级别交易聚合和计算
+3. 交易模式分析和分类
 4. 影响力评分算法实现
 5. 市场信号生成模型开发
 
@@ -277,16 +283,21 @@ CREATE TABLE IF NOT EXISTS dws.dws_nft_price_1d (
 ) WITH (
   'bucket' = '8',
   'bucket-key' = 'collection_id',
-  'file.format' = 'parquet'
+  'file.format' = 'parquet',
+  'merge-engine' = 'deduplicate',
+  'changelog-producer' = 'input',
+  'compaction.min.file-num' = '5',
+  'compaction.max.file-num' = '50',
+  'compaction.target-file-size' = '256MB'
 );
 ```
 
-实现流程：
+已完成的实现内容：
 1. 系列级别价格聚合计算
-2. 价格波动率与动量模型
-3. 鲸鱼关注度算法开发
-4. 流动性评分体系实现
-5. 趋势预测模型构建
+2. 价格波动率与动量模型开发
+3. 鲸鱼关注度算法和指标计算
+4. 流动性评分体系建立
+5. 价格趋势预测模型实现
 
 #### 5.2.3 市场活跃度汇总表(dws_market_activity_1d)
 ```sql
@@ -307,21 +318,28 @@ CREATE TABLE IF NOT EXISTS dws.dws_market_activity_1d (
 ) WITH (
   'bucket' = '4',
   'bucket-key' = 'marketplace_id',
-  'file.format' = 'parquet'
+  'file.format' = 'parquet',
+  'merge-engine' = 'deduplicate',
+  'changelog-producer' = 'input',
+  'compaction.min.file-num' = '5',
+  'compaction.max.file-num' = '50',
+  'compaction.target-file-size' = '256MB'
 );
 ```
 
-实现流程：
-1. 市场日交易聚合分析
-2. 用户活跃度计算
-3. 热门系列排名算法
+已完成的实现内容：
+1. 市场日交易聚合分析和统计
+2. 用户活跃度计算和评估
+3. 热门系列排名算法开发
 4. 市场情绪指标构建
-5. 鲸鱼交易影响分析
+5. 鲸鱼交易影响分析实现
 
-### 5.3 实时计算框架
-- 使用Flink的时间窗口进行实时聚合
+### 5.3 实时计算框架 [已完成]
+- 使用Flink的时间窗口实现实时聚合
 - 结合Paimon的变更数据捕获(CDC)功能实现增量计算
 - 通过状态后端保障数据一致性
+- 实现微批处理优化性能
+- 配置检查点和容错机制保证数据可靠性
 
 ### 5.4 数据质量保障
 - 输入验证：检查字段完整性和有效性
@@ -381,11 +399,11 @@ CREATE TABLE IF NOT EXISTS dws.dws_market_activity_1d (
 |------|---------|---------|--------|
 | 阶段一：基础架构设计与ODS层 | 已完成 | 已完成 | 数据工程团队 |
 | 阶段二：DWD/DIM层开发 | 已完成 | 已完成 | 数据工程团队 |
-| 阶段三：DWS层开发 | T+1天 | T+21天 | 数据工程团队 |
-| 阶段四：ADS层与API开发 | T+22天 | T+35天 | 全栈开发团队 |
-| 阶段五：前端开发与系统集成 | T+36天 | T+49天 | 前端团队 |
-| 用户验收测试 | T+50天 | T+56天 | 测试团队 |
-| 系统上线 | T+57天 | | 运维团队 |
+| 阶段三：DWS层开发 | 已完成 | 已完成 | 数据工程团队 |
+| 阶段四：ADS层与API开发 | T+1天 | T+14天 | 全栈开发团队 |
+| 阶段五：前端开发与系统集成 | T+15天 | T+28天 | 前端团队 |
+| 用户验收测试 | T+29天 | T+35天 | 测试团队 |
+| 系统上线 | T+36天 | | 运维团队 |
 
 ## 10. 后续扩展规划
 
@@ -453,7 +471,7 @@ CREATE TABLE IF NOT EXISTS dws.dws_market_activity_1d (
 ---
 
 **版本控制信息：**
-- 文档版本：2.0
+- 文档版本：3.0
 - 创建日期：2023-03-20
-- 最后更新：2023-03-21
+- 最后更新：2023-05-15
 - 审批状态：已更新 
