@@ -1,0 +1,10 @@
+version: '3'
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nft-whale-tracker-frontend
+    ports:
+      - "80:80"
+    restart: unless-stopped 

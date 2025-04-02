@@ -26,3 +26,7 @@ target/classes/*
 restart_jobs.sh
 start_all.sh
 nft-tracker.log
+
+*.sh
+node_modules
+paimon_query.sql

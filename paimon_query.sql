@@ -24,4 +24,4 @@ USE ods;
 SHOW TABLES;
 
 -- 查询鲸鱼钱包数据(取10条)
-SELECT * FROM ods_nft_transaction_inc LIMIT 10; 
+SELECT * FROM ods_nft_transaction_inc LIMIT 1; 

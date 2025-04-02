@@ -58,7 +58,7 @@ stop_all_services() {
     print_message "停止Dinky服务..." $YELLOW
     if check_service "dinky"; then
         cd $DINKY_HOME
-        ./auto.sh stop
+        ./bin/auto.sh stop
         sleep 3
         print_message "Dinky服务已停止" $GREEN
     else
@@ -227,7 +227,7 @@ start_all_services() {
     # 启动Dinky
     print_message "启动Dinky服务..." $YELLOW
     cd $DINKY_HOME
-    ./auto.sh start 1.18
+    ./bin/auto.sh start 1.18
     sleep 5
     if check_service "dinky"; then
         print_message "Dinky服务已启动" $GREEN
