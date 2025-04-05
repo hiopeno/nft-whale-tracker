@@ -97,3 +97,60 @@ nft-whale-tracker-frontend/
 - 实现实时数据更新
 - 增加图表与分析功能
 - 优化移动端体验
+
+## 与后端对接
+
+本前端项目通过API和WebSocket与后端进行对接，对接方式如下：
+
+### REST API对接
+
+前端通过`/src/api/api.ts`中定义的函数与后端REST API进行交互：
+
+```typescript
+// 示例：获取鲸鱼统计数据
+whaleTrackingApi.getWhaleStats().then(data => {
+  console.log(data);
+});
+
+// 示例：获取交易列表
+whaleTrackingApi.getTransactions({
+  page: 1,
+  pageSize: 10,
+  whaleType: 'all'
+}).then(data => {
+  console.log(data);
+});
+```
+
+### WebSocket对接
+
+前端通过`/src/api/websocket.ts`中的WebSocketService与后端WebSocket进行实时消息交互：
+
+```typescript
+// 在应用入口初始化WebSocket服务
+import { initWebSocket, websocketService } from './api';
+initWebSocket();
+
+// 订阅交易通知
+websocketService.subscribeTransactions((message) => {
+  console.log('收到交易通知:', message);
+});
+
+// 订阅低价机会
+websocketService.subscribeDealOpportunities((message) => {
+  console.log('收到低价机会:', message);
+});
+
+// 订阅系统通知
+websocketService.subscribeSystemNotifications((message) => {
+  console.log('收到系统通知:', message);
+});
+```
+
+### 开发环境配置
+
+在开发环境中，前端默认连接`http://localhost:8080`和`ws://localhost:8080/ws`。如需修改，请在`/src/api/config.ts`中调整配置。
+
+### 生产环境配置
+
+在生产环境中，前端使用相对路径`/api`和`/ws`，通过Nginx代理转发到后端服务器。

@@ -1,106 +1,77 @@
-# NFT鲸鱼追踪与低价NFT狙击系统
+# NFT鲸鱼追踪系统
 
-该项目是一个基于大数据技术栈的NFT数据分析系统，主要功能包括NFT鲸鱼钱包追踪和低价NFT交易狙击。
-
-## 功能特点
-
-- **NFT交易数据生成**：模拟真实NFT交易数据，包括收藏集、NFT资产、交易记录等
-- **鲸鱼钱包追踪**：识别和追踪大额NFT交易和持有者，提供鲸鱼活动分析
-- **低价NFT狙击**：发现低于地板价的NFT交易机会，实时提醒
-- **异常交易检测**：识别价格异常波动和可疑交易模式
-- **数据可视化**：提供直观的数据图表和Dashboard
-
-## 技术栈
-
-- **数据生成**：Java + Spring Boot
-- **消息队列**：Kafka
-- **数据处理**：Flink
-- **数据存储**：Paimon
-- **数据分析**：SQL
-- **数据可视化**：待实现
+本项目是一个用于追踪NFT市场中鲸鱼活动的系统，包含前端和后端两个部分。
 
 ## 项目结构
 
+- `nft-whale-tracker-frontend` - 前端项目（React + TypeScript）
+- `nft-whale-tracker-backend` - 后端项目（Spring Boot + Java）
+- `docker-compose.yml` - Docker Compose配置文件，用于启动整个系统
+
+## 功能特点
+
+- 鲸鱼账户监控与分析
+- NFT交易实时追踪
+- 低价机会自动检测
+- WebSocket实时推送
+- 交易数据可视化
+
+## 如何运行
+
+### 开发环境
+
+#### 后端
+
+1. 进入后端目录：`cd nft-whale-tracker-backend`
+2. 使用Maven构建：`./mvnw clean install -DskipTests`
+3. 运行Spring Boot应用：`./mvnw spring-boot:run`
+4. 后端将在 http://localhost:8080 上运行
+
+#### 前端
+
+1. 进入前端目录：`cd nft-whale-tracker-frontend`
+2. 安装依赖：`npm install`
+3. 启动开发服务器：`npm start`
+4. 前端将在 http://localhost:3000 上运行
+
+### 生产环境（使用Docker）
+
+整个系统可以使用Docker Compose一键启动：
+
+```bash
+docker-compose up -d
 ```
-nft-whale-tracker/
-├── src/                             # 源代码
-│   ├── main/
-│   │   ├── java/
-│   │   │   └── org/bigdatatechcir/whale/
-│   │   │       ├── model/           # 数据模型
-│   │   │       ├── generator/       # 数据生成器
-│   │   │       ├── util/            # 工具类
-│   │   │       ├── warehouse/       # 数据仓库
-│   │   │       │   └── flink/       # Flink处理
-│   │   │       │       └── paimon/  # Paimon存储
-│   │   │       │           ├── ods/ # 原始数据层
-│   │   │       │           ├── dwd/ # 明细数据层
-│   │   │       │           ├── dim/ # 维度数据层
-│   │   │       │           ├── dws/ # 汇总数据层
-│   │   │       │           └── ads/ # 应用数据层
-│   │   │       └── NFTDataGeneratorApplication.java # 主应用
-│   │   └── resources/               # 配置文件
-├── lib/                             # 项目依赖
-└── pom.xml                          # Maven配置
-```
 
-## 安装和运行
+访问地址：http://localhost
 
-### 前置条件
+## 前后端对接
 
-- JDK 8+
-- Maven 3.6+
-- Kafka
-- Flink
-- Hadoop (HDFS)
-- Hive Metastore
+前后端之间通过以下方式进行数据交互：
 
-### 构建和运行
+1. **REST API**：前端通过HTTP请求获取数据和触发后端操作
+2. **WebSocket**：后端通过WebSocket向前端推送实时消息，如新交易通知和低价机会
 
-1. 克隆项目
-   ```bash
-   git clone https://github.com/yourusername/nft-whale-tracker.git
-   cd nft-whale-tracker
-   ```
+详细API文档请参考各项目目录中的文档。
 
-2. 编译项目
-   ```bash
-   mvn clean package
-   ```
+## 技术栈
 
-3. 运行模拟数据生成器
-   ```bash
-   java -jar target/nft-whale-tracker-1.0-SNAPSHOT-executable.jar
-   ```
+### 前端
 
-4. 配置选项
-   
-   可以通过修改`application.properties`文件或者运行时传入系统属性来配置应用：
-   
-   ```bash
-   java -Dgenerator.interval=2000 -Dgenerator.collections=5 -jar target/nft-whale-tracker-1.0-SNAPSHOT-executable.jar
-   ```
+- React 18
+- TypeScript
+- Ant Design
+- ECharts
+- Axios
+- SockJS & STOMP
 
-## 数据模型
+### 后端
 
-- **NFT**: NFT资产信息模型
-- **NFTCollection**: NFT收藏集模型
-- **NFTTransaction**: NFT交易记录模型
-- **WhaleWallet**: 鲸鱼钱包模型
-- **NFTAlert**: NFT提醒模型，用于低价狙击
-
-## 后续开发计划
-
-- 集成机器学习模型进行价格预测
-- 添加区块链数据实时抓取功能
-- 开发Web界面和移动应用
-- 支持更多区块链网络
-- 添加交易机会自动执行功能
-
-## 贡献
-
-欢迎贡献代码、报告问题或提出改进建议。
+- Spring Boot 2.7
+- Spring WebSocket
+- Spring Data JPA
+- H2数据库（开发环境）
+- Lombok
 
 ## 许可证
 
-[MIT License](LICENSE) 
+MIT 
