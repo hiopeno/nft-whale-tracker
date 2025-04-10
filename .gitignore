@@ -30,3 +30,4 @@ nft-tracker.log
 *.sh
 node_modules
 paimon_query.sql
+src/main/java/org/bigdatatechcir/whale/warehouse/flink/paimon/ods/data/*.json

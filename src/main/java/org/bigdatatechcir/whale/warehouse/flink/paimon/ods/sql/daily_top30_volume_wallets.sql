@@ -1,0 +1,59 @@
+-- 当天交易额Top30钱包数据
+
+-- NFT API数据表结构定义和数据导入
+
+-- 设置执行参数
+SET 'execution.checkpointing.interval' = '10s';
+SET 'table.exec.state.ttl'= '8640000';
+SET 'table.local-time-zone' = 'Asia/Shanghai';
+
+/* 创建Paimon Catalog */
+CREATE CATALOG paimon_hive WITH (
+    'type' = 'paimon',
+    'metastore' = 'hive',
+    'uri' = 'thrift://192.168.254.133:9083',
+    'hive-conf-dir' = '/opt/software/apache-hive-3.1.3-bin/conf',
+    'hadoop-conf-dir' = '/opt/software/hadoop-3.1.3/etc/hadoop',
+    'warehouse' = 'hdfs:////user/hive/warehouse'
+);
+
+USE CATALOG paimon_hive;
+CREATE DATABASE IF NOT EXISTS ods;
+USE ods;
+
+
+-- 当天交易额Top30钱包
+CREATE TABLE IF NOT EXISTS ods_daily_top30_volume_wallets (
+    rank_date STRING,
+    account_address STRING,
+    rank_num INT,
+    trade_volume DOUBLE,
+    trade_volume_usdc DOUBLE,
+    trade_count BIGINT,
+    is_whale BOOLEAN, 
+    created_at TIMESTAMP(3),
+    PRIMARY KEY (rank_date, account_address) NOT ENFORCED
+) WITH (
+    'bucket' = '4',
+    'bucket-key' = 'account_address',
+    'file.format' = 'parquet',
+    'merge-engine' = 'deduplicate',
+    'changelog-producer' = 'input',
+    'compaction.min.file-num' = '5',
+    'compaction.max.file-num' = '50',
+    'compaction.target-file-size' = '128MB'
+);
+
+-- 插入数据
+INSERT INTO ods_daily_top30_volume_wallets (
+    rank_date,
+    account_address,
+    rank_num,
+    trade_volume,
+    trade_volume_usdc,
+    trade_count,
+    is_whale,
+    created_at
+) VALUES
+('2025-04-10', '0x29469395eaf6f95920e59f858042f0e28d98a20b', 1, 237.3949, 352766.5947, 66, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0x850cae094ce34c564327818631287a75d3cee6ca', 2, 142, 208123.72, 1, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0xf6c21073aff980022b95391216b170218d0f01a3', 3, 142, 208123.72, 1, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0xd8c420d32ab303983baca520a83a3f27ca725d9e', 4, 91.99, 136376.0434, 2, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0xeb79f3b9836e14678abdb862aabfc171341b3199', 5, 58.856, 87815.9859, 12, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0x1f87eaca03ee86b0800865b767a82e90430d0774', 6, 54.75, 81327.5663, 1, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0x2f03586e466b1583aac697c18382c2b1b0855fab', 7, 54.75, 81327.5663, 1, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0x5ec5c2468674a5d10db93db588fbff5d8da2fdc1', 8, 51.72, 76789.9338, 2, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0x0ae8ea62a3617f5950d2b850d1c78349ee3a2063', 9, 48.88, 71853.3556, 1, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0x7c1958ba95ab3170f6069dadf4de304b0c00000c', 10, 48.88, 71853.3556, 1, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0x1ea27bce786a81022dfc156059771e8d3279a9a6', 11, 47.2776, 69725.192, 21, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0x8972e0a32d509708c55e5a46d05966e690a454ca', 12, 47, 66657.985, 1, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0x066ae24aba80760847e676de1c09e57d3e7bc90f', 13, 47, 66657.985, 1, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0x0233a4970e5fa014f263b4a52427e997291e6cca', 14, 44.99, 63807.2925, 1, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0x9c7966c79260b120a6ca69febd1eacdd30303527', 15, 44.99, 63807.2925, 1, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0x1919db36ca2fa2e15f9000fd9cdc2edcf863e685', 16, 44, 65105.26, 1, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0x5bca4075dfc8065235cf75c6b15b410e62845fec', 17, 44, 65105.26, 1, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0xf2ec3cf3efbab92f806c7012fe43216d19ea1410', 18, 42.99, 63610.7984, 1, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0x5b468edb7688e9ae6c1fa5a6d2debbef06e92907', 19, 42.0067, 62365.8611, 7, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0x662307a93bce119539a81408186bba28f01613cf', 20, 41.825, 63986.9351, 4, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0xff53e1da7b67ae676d7742f858aab5bd4bc937f6', 21, 36.838, 55974.0792, 3, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0x1fee3385b22d69e93209db2042be58fcac57b59b', 22, 36.7699, 53622.862, 5, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0x511432a0ca35ea7a3874290872333b8b719280fc', 23, 31.7951, 47268.2878, 33, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0xd7adf74d4ce376fbf90ceb980f0b070625e0f388', 24, 31.0493, 45880.2904, 21, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0x3f9343a5b2d1ccad06a07219b7d74e3cbff1b8cb', 25, 30.71, 44881.0938, 5, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0xf76246b0842c92ad5bd745973ca9eb85b937b126', 26, 29.25, 43799.6474, 2, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0xf4fb9fa23edb32215e5284cf7dbfdb5607d51a5b', 27, 28.23, 40037.3387, 2, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0xd26ab5c92c7a40263971828f216729e00cef6e7e', 28, 23.3007, 34597.2434, 17, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0x9b8d12fb2045d6f5d021e7e1f45e51296df6f060', 29, 23, 33691.435, 1, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP)),('2025-04-10', '0xfaa9dccf86f5cd4db872377c18368b5d58bc7b38', 30, 23, 33691.435, 1, TRUE, CAST('2025-04-10 15:26:03' AS TIMESTAMP))
+;
