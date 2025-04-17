@@ -73,9 +73,9 @@ nft-whale-tracker-frontend/
 │   │   └── Layout/          # 布局组件
 │   ├── hooks/               # 自定义hooks
 │   ├── pages/               # 页面组件
-│   │   ├── WhaleTrack/      # 仪表盘页面
-│   │   ├── NftSnipe/        # 机会页面
-│   │   └── Strategy/        # 策略页面
+│   │   ├── WhaleTrack/      # 鲸鱼追踪页面
+│   │   ├── NftSnipe/        # 藏品狙击页面
+│   │   └── Strategy/        # 策略推荐页面
 │   ├── store/               # 状态管理
 │   ├── utils/               # 工具函数
 │   ├── App.tsx              # 应用入口

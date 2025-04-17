@@ -109,8 +109,8 @@
 |-------|---------|------|-------|
 | record_time | TIMESTAMP | 记录时间，数据录入的时间戳 | 2025-04-10 15:25:11 |
 | hash | VARCHAR(255) | 交易哈希，区块链上的唯一交易标识 | 0xabc123... |
-| from_address | VARCHAR(255) | 发送方地址 | 0x123... |
-| to_address | VARCHAR(255) | 接收方地址 | 0x456... |
+| buyer_address | VARCHAR(255) | 区块链交易发起方/签名者地址 | 0x123... |
+| marketplace_address | VARCHAR(255) | 区块链交易目标/NFT市场合约地址 | 0x456... |
 | block_number | VARCHAR(50) | 区块号 | 17234567 |
 | block_hash | VARCHAR(255) | 区块哈希 | 0xdef456... |
 | gas_price | VARCHAR(255) | Gas价格 | 0x5b8d7f5800 |
@@ -122,8 +122,8 @@
 | contract_token_id | VARCHAR(255) | 合约中的代币ID | 1 |
 | token_id | VARCHAR(255) | 代币ID，可能是合约代币ID的变体 | 1 |
 | erc_type | VARCHAR(50) | ERC标准类型 | erc721 |
-| send | VARCHAR(255) | 发送数量 | 1 |
-| receive | VARCHAR(255) | 接收数量 | 1 |
+| from_address | VARCHAR(255) | NFT发送方/卖家地址 | 1 |
+| to_address | VARCHAR(255) | NFT接收方/买家地址 | 1 |
 | amount | VARCHAR(255) | 交易金额 | 1 |
 | trade_value | VARCHAR(255) | 交易价值（以交易代币计算） | 0.1 |
 | trade_price | DECIMAL(30,10) | 交易价格（以ETH计算） | 0.1 |

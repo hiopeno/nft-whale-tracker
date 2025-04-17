@@ -2671,7 +2671,7 @@ const WalletAnalysisModal: React.FC<{
 const WhaleListModal: React.FC<{
   visible: boolean;
   onClose: () => void;
-  type: 'tracked' | 'smart' | 'dumb';
+  type: 'tracked' | 'smart' | 'dumb' | 'all';
   onSelectWhale: (whaleId: string) => void;
 }> = ({ visible, onClose, type, onSelectWhale }) => {
   const [loading, setLoading] = useState(true);
@@ -2686,6 +2686,8 @@ const WhaleListModal: React.FC<{
         return '聪明鲸鱼列表';
       case 'dumb':
         return '愚蠢鲸鱼列表';
+      case 'all':
+        return '所有鲸鱼列表';
       default:
         return '鲸鱼列表';
     }
@@ -2700,6 +2702,8 @@ const WhaleListModal: React.FC<{
         return <BulbOutlined style={{ color: 'var(--success)' }} />;
       case 'dumb':
         return <SmileOutlined style={{ color: 'var(--warning)', transform: 'rotate(180deg)' }} />;
+      case 'all':
+        return <UserOutlined style={{ color: 'var(--danger)' }} />;
       default:
         return <UserOutlined />;
     }
@@ -2889,6 +2893,434 @@ const WhaleListModal: React.FC<{
               addressCount: 2
             }
           ];
+        } else if (type === 'all') {
+          // 鲸鱼名单综合数据（35个）
+          data = [
+            // 智能鲸鱼数据（8个）
+            {
+              key: '1',
+              whaleId: 'WHALE-0x2469',
+              mainNft: 'BAYC',
+              influence: 98,
+              totalHolding: 3850000,
+              totalProfit: 1250000,
+              profitPercent: 48.1,
+              totalNetProfit: 850000,
+              netProfitPercent: 32.7,
+              addressCount: 3
+            },
+            {
+              key: '2',
+              whaleId: 'WHALE-0x7842',
+              mainNft: 'CryptoPunks',
+              influence: 94,
+              totalHolding: 5120000,
+              totalProfit: 1840000,
+              profitPercent: 56.2,
+              totalNetProfit: 1220000,
+              netProfitPercent: 37.3,
+              addressCount: 4
+            },
+            {
+              key: '3',
+              whaleId: 'WHALE-0x5678',
+              mainNft: 'BAYC',
+              influence: 91,
+              totalHolding: 4120000,
+              totalProfit: 830000,
+              profitPercent: 25.2,
+              totalNetProfit: 550000,
+              netProfitPercent: 16.5,
+              addressCount: 4
+            },
+            {
+              key: '4',
+              whaleId: 'WHALE-0x3694',
+              mainNft: 'Art Blocks',
+              influence: 88,
+              totalHolding: 2850000,
+              totalProfit: 780000,
+              profitPercent: 37.7,
+              totalNetProfit: 520000,
+              netProfitPercent: 25.2,
+              addressCount: 2
+            },
+            {
+              key: '5',
+              whaleId: 'WHALE-0x9127',
+              mainNft: 'Moonbirds',
+              influence: 85,
+              totalHolding: 1250000,
+              totalProfit: 430000,
+              profitPercent: 52.5,
+              totalNetProfit: 290000,
+              netProfitPercent: 35.4,
+              addressCount: 2
+            },
+            {
+              key: '6',
+              whaleId: 'WHALE-0x6245',
+              mainNft: 'Pudgy Penguins',
+              influence: 82,
+              totalHolding: 1720000,
+              totalProfit: 620000,
+              profitPercent: 56.4,
+              totalNetProfit: 420000,
+              netProfitPercent: 38.2,
+              addressCount: 2
+            },
+            {
+              key: '7',
+              whaleId: 'WHALE-0x8132',
+              mainNft: 'Meebits',
+              influence: 80,
+              totalHolding: 2230000,
+              totalProfit: 910000,
+              profitPercent: 68.9,
+              totalNetProfit: 620000,
+              netProfitPercent: 46.9,
+              addressCount: 3
+            },
+            {
+              key: '8',
+              whaleId: 'WHALE-0x4519',
+              mainNft: 'CloneX',
+              influence: 78,
+              totalHolding: 1930000,
+              totalProfit: 740000,
+              profitPercent: 62.2,
+              totalNetProfit: 495000,
+              netProfitPercent: 41.5,
+              addressCount: 2
+            },
+            // 追踪鲸鱼数据（上面已有3个，补充2个）
+            {
+              key: '9',
+              whaleId: 'WHALE-0x1234',
+              mainNft: 'CryptoPunks',
+              influence: 89,
+              totalHolding: 3250000,
+              totalProfit: 420000,
+              profitPercent: 14.8,
+              totalNetProfit: 280000,
+              netProfitPercent: 9.8,
+              addressCount: 3
+            },
+            {
+              key: '10',
+              whaleId: 'WHALE-0xabcd',
+              mainNft: 'Doodles',
+              influence: 82,
+              totalHolding: 1450000,
+              totalProfit: 180000,
+              profitPercent: 14.2,
+              totalNetProfit: 120000,
+              netProfitPercent: 9.2,
+              addressCount: 2
+            },
+            // 愚蠢鲸鱼数据（4个）
+            {
+              key: '11',
+              whaleId: 'WHALE-0x3254',
+              mainNft: 'Doodles',
+              influence: 45,
+              totalHolding: 950000,
+              totalProfit: -380000,
+              profitPercent: -28.6,
+              totalNetProfit: -450000,
+              netProfitPercent: -33.8,
+              addressCount: 2
+            },
+            {
+              key: '12',
+              whaleId: 'WHALE-0x9876',
+              mainNft: 'CloneX',
+              influence: 38,
+              totalHolding: 980000,
+              totalProfit: -120000,
+              profitPercent: -10.9,
+              totalNetProfit: -180000,
+              netProfitPercent: -15.5,
+              addressCount: 2
+            },
+            {
+              key: '13',
+              whaleId: 'WHALE-0x5431',
+              mainNft: 'Pudgy Penguins',
+              influence: 52,
+              totalHolding: 520000,
+              totalProfit: -210000,
+              profitPercent: -28.8,
+              totalNetProfit: -280000,
+              netProfitPercent: -35.0,
+              addressCount: 1
+            },
+            {
+              key: '14',
+              whaleId: 'WHALE-0x7890',
+              mainNft: 'Moonbirds',
+              influence: 42,
+              totalHolding: 680000,
+              totalProfit: -150000,
+              profitPercent: -18.1,
+              totalNetProfit: -210000,
+              netProfitPercent: -23.6,
+              addressCount: 2
+            },
+            // 新增鲸鱼数据（21个）
+            {
+              key: '15',
+              whaleId: 'WHALE-0xbb32',
+              mainNft: 'MAYC',
+              influence: 75,
+              totalHolding: 1350000,
+              totalProfit: 320000,
+              profitPercent: 31.1,
+              totalNetProfit: 245000,
+              netProfitPercent: 23.8,
+              addressCount: 2
+            },
+            {
+              key: '16',
+              whaleId: 'WHALE-0xcc67',
+              mainNft: 'Otherdeed',
+              influence: 72,
+              totalHolding: 980000,
+              totalProfit: 210000,
+              profitPercent: 27.3,
+              totalNetProfit: 165000,
+              netProfitPercent: 21.4,
+              addressCount: 2
+            },
+            {
+              key: '17',
+              whaleId: 'WHALE-0xdd78',
+              mainNft: 'DeGods',
+              influence: 68,
+              totalHolding: 875000,
+              totalProfit: 195000,
+              profitPercent: 28.6,
+              totalNetProfit: 145000,
+              netProfitPercent: 21.2,
+              addressCount: 1
+            },
+            {
+              key: '18',
+              whaleId: 'WHALE-0xee59',
+              mainNft: 'Milady',
+              influence: 76,
+              totalHolding: 920000,
+              totalProfit: 185000,
+              profitPercent: 25.2,
+              totalNetProfit: 140000,
+              netProfitPercent: 19.1,
+              addressCount: 3
+            },
+            {
+              key: '19',
+              whaleId: 'WHALE-0xff12',
+              mainNft: 'Azuki',
+              influence: 64,
+              totalHolding: 1250000,
+              totalProfit: 280000,
+              profitPercent: 28.9,
+              totalNetProfit: 195000,
+              netProfitPercent: 20.1,
+              addressCount: 2
+            },
+            {
+              key: '20',
+              whaleId: 'WHALE-0x1a45',
+              mainNft: 'Fidenza',
+              influence: 77,
+              totalHolding: 1750000,
+              totalProfit: 510000,
+              profitPercent: 41.1,
+              totalNetProfit: 375000,
+              netProfitPercent: 30.2,
+              addressCount: 2
+            },
+            {
+              key: '21',
+              whaleId: 'WHALE-0x2b23',
+              mainNft: 'Chromie Squiggle',
+              influence: 66,
+              totalHolding: 950000,
+              totalProfit: 215000,
+              profitPercent: 29.2,
+              totalNetProfit: 165000,
+              netProfitPercent: 22.4,
+              addressCount: 1
+            },
+            {
+              key: '22',
+              whaleId: 'WHALE-0x3c56',
+              mainNft: 'Autoglyphs',
+              influence: 83,
+              totalHolding: 2250000,
+              totalProfit: 750000,
+              profitPercent: 50.0,
+              totalNetProfit: 560000,
+              netProfitPercent: 37.3,
+              addressCount: 2
+            },
+            {
+              key: '23',
+              whaleId: 'WHALE-0x4d89',
+              mainNft: 'CoolCats',
+              influence: 62,
+              totalHolding: 720000,
+              totalProfit: 150000,
+              profitPercent: 26.3,
+              totalNetProfit: 105000,
+              netProfitPercent: 18.4,
+              addressCount: 1
+            },
+            {
+              key: '24',
+              whaleId: 'WHALE-0x5e91',
+              mainNft: 'Nouns',
+              influence: 79,
+              totalHolding: 2650000,
+              totalProfit: 920000,
+              profitPercent: 53.2,
+              totalNetProfit: 680000,
+              netProfitPercent: 39.3,
+              addressCount: 3
+            },
+            {
+              key: '25',
+              whaleId: 'WHALE-0x6f34',
+              mainNft: 'Cryptoadz',
+              influence: 58,
+              totalHolding: 840000,
+              totalProfit: -95000,
+              profitPercent: -10.2,
+              totalNetProfit: -150000,
+              netProfitPercent: -16.1,
+              addressCount: 2
+            },
+            {
+              key: '26',
+              whaleId: 'WHALE-0x7g65',
+              mainNft: 'Goblintown',
+              influence: 54,
+              totalHolding: 420000,
+              totalProfit: -65000,
+              profitPercent: -13.4,
+              totalNetProfit: -110000,
+              netProfitPercent: -22.7,
+              addressCount: 1
+            },
+            {
+              key: '27',
+              whaleId: 'WHALE-0x8h12',
+              mainNft: 'Loot',
+              influence: 49,
+              totalHolding: 380000,
+              totalProfit: -125000,
+              profitPercent: -24.8,
+              totalNetProfit: -190000,
+              netProfitPercent: -37.6,
+              addressCount: 1
+            },
+            {
+              key: '28',
+              whaleId: 'WHALE-0x9i54',
+              mainNft: 'Dooplicator',
+              influence: 61,
+              totalHolding: 590000,
+              totalProfit: 85000,
+              profitPercent: 16.8,
+              totalNetProfit: 55000,
+              netProfitPercent: 10.9,
+              addressCount: 1
+            },
+            {
+              key: '29',
+              whaleId: 'WHALE-0xaj78',
+              mainNft: 'BAKC',
+              influence: 72,
+              totalHolding: 1120000,
+              totalProfit: 280000,
+              profitPercent: 33.3,
+              totalNetProfit: 210000,
+              netProfitPercent: 25.0,
+              addressCount: 2
+            },
+            {
+              key: '30',
+              whaleId: 'WHALE-0xbk90',
+              mainNft: 'Sandbox Land',
+              influence: 67,
+              totalHolding: 1580000,
+              totalProfit: 430000,
+              profitPercent: 37.4,
+              totalNetProfit: 320000,
+              netProfitPercent: 27.8,
+              addressCount: 3
+            },
+            {
+              key: '31',
+              whaleId: 'WHALE-0xcl23',
+              mainNft: 'Decentraland',
+              influence: 59,
+              totalHolding: 920000,
+              totalProfit: 180000,
+              profitPercent: 24.3,
+              totalNetProfit: 130000,
+              netProfitPercent: 17.6,
+              addressCount: 2
+            },
+            {
+              key: '32',
+              whaleId: 'WHALE-0xdm45',
+              mainNft: 'CloneX',
+              influence: 55,
+              totalHolding: 650000,
+              totalProfit: -80000,
+              profitPercent: -11.0,
+              totalNetProfit: -120000,
+              netProfitPercent: -16.5,
+              addressCount: 1
+            },
+            {
+              key: '33',
+              whaleId: 'WHALE-0xen67',
+              mainNft: 'Moonbirds',
+              influence: 69,
+              totalHolding: 980000,
+              totalProfit: 250000,
+              profitPercent: 34.2,
+              totalNetProfit: 190000,
+              netProfitPercent: 26.0,
+              addressCount: 2
+            },
+            {
+              key: '34',
+              whaleId: 'WHALE-0xfo89',
+              mainNft: 'Crypto Punks',
+              influence: 71,
+              totalHolding: 1850000,
+              totalProfit: 520000,
+              profitPercent: 39.1,
+              totalNetProfit: 380000,
+              netProfitPercent: 28.6,
+              addressCount: 2
+            },
+            {
+              key: '35',
+              whaleId: 'WHALE-0xgp12',
+              mainNft: 'BAYC',
+              influence: 74,
+              totalHolding: 2120000,
+              totalProfit: 680000,
+              profitPercent: 47.2,
+              totalNetProfit: 510000,
+              netProfitPercent: 35.4,
+              addressCount: 3
+            }
+          ];
         }
         
         setWhaleList(data);
@@ -2931,6 +3363,7 @@ const WhaleListModal: React.FC<{
       title: <Text style={{ color: 'var(--text-primary)' }}>鲸鱼ID</Text>,
       dataIndex: 'whaleId',
       key: 'whaleId',
+      width: 180,
       render: (id: string) => (
         <Text 
           style={{ 
@@ -2956,6 +3389,7 @@ const WhaleListModal: React.FC<{
       title: <Text style={{ color: 'var(--text-primary)' }}>重仓NFT</Text>,
       dataIndex: 'mainNft',
       key: 'mainNft',
+      width: 150,
       render: (nft: string) => (
         <Badge 
           color="var(--primary)" 
@@ -2967,6 +3401,7 @@ const WhaleListModal: React.FC<{
       title: <Text style={{ color: 'var(--text-primary)' }}>总持仓金额</Text>,
       dataIndex: 'totalHolding',
       key: 'totalHolding',
+      width: 150,
       render: (value: number) => (
         <Statistic
           value={value}
@@ -2984,6 +3419,7 @@ const WhaleListModal: React.FC<{
       title: <Text style={{ color: 'var(--text-primary)' }}>总持有收益</Text>,
       dataIndex: 'totalProfit',
       key: 'totalProfit',
+      width: 150,
       render: (value: number, record: any) => (
         <div>
           <Statistic
@@ -3011,6 +3447,7 @@ const WhaleListModal: React.FC<{
       title: <Text style={{ color: 'var(--text-primary)' }}>总净收益</Text>,
       dataIndex: 'totalNetProfit',
       key: 'totalNetProfit',
+      width: 150,
       render: (value: number, record: any) => (
         <div>
           <Statistic
@@ -3038,6 +3475,7 @@ const WhaleListModal: React.FC<{
       title: <Text style={{ color: 'var(--text-primary)' }}>关联钱包数</Text>,
       dataIndex: 'addressCount',
       key: 'addressCount',
+      width: 100,
       render: (count: number) => (
         <Badge 
           count={count} 
@@ -3064,7 +3502,7 @@ const WhaleListModal: React.FC<{
       visible={visible}
       onCancel={onClose}
       footer={null}
-      width={1000}
+      width={1200}
       className="tech-modal"
       style={{ top: 20 }}
     >
@@ -3087,6 +3525,7 @@ const WhaleListModal: React.FC<{
           }} 
           rowClassName="tech-table-row"
           style={{ background: 'transparent' }}
+          scroll={{ x: 1080 }}
         />
       )}
     </Modal>
@@ -3105,7 +3544,7 @@ const Dashboard: React.FC = () => {
 
   // 添加鲸鱼列表模态框状态
   const [whaleListModalVisible, setWhaleListModalVisible] = useState(false);
-  const [whaleListType, setWhaleListType] = useState<'tracked' | 'smart' | 'dumb'>('tracked');
+  const [whaleListType, setWhaleListType] = useState<'tracked' | 'smart' | 'dumb' | 'all'>('tracked');
   
   // 添加鲸鱼钱包模态框状态
   const [whaleAddressModalVisible, setWhaleAddressModalVisible] = useState(false);
@@ -3133,7 +3572,7 @@ const Dashboard: React.FC = () => {
   };
 
   // 处理点击鲸鱼统计卡片
-  const handleWhaleCardClick = (type: 'tracked' | 'smart' | 'dumb') => {
+  const handleWhaleCardClick = (type: 'tracked' | 'smart' | 'dumb' | 'all') => {
     setWhaleListType(type);
     setWhaleListModalVisible(true);
   };
@@ -3355,6 +3794,7 @@ const Dashboard: React.FC = () => {
       title: <Text style={{ color: 'var(--text-primary)' }}>钱包地址</Text>,
       dataIndex: 'address',
       key: 'address',
+      width: 180,
       render: (address: string, record: any) => (
         <Text 
           style={{ 
@@ -3373,6 +3813,7 @@ const Dashboard: React.FC = () => {
       title: <Text style={{ color: 'var(--text-primary)' }}>影响力评分</Text>,
       dataIndex: 'influenceScore',
       key: 'influenceScore',
+      width: 140,
       render: (score: number) => {
         let color = 'var(--success)';
         if (score > 80) {
@@ -3395,6 +3836,7 @@ const Dashboard: React.FC = () => {
       title: <Text style={{ color: 'var(--text-primary)' }}>持仓金额</Text>,
       dataIndex: 'holdingValue',
       key: 'holdingValue',
+      width: 140,
       render: (value: number) => (
         <Statistic
           value={value}
@@ -3412,6 +3854,7 @@ const Dashboard: React.FC = () => {
       title: <Text style={{ color: 'var(--text-primary)' }}>持有收益</Text>,
       dataIndex: 'holdingProfit',
       key: 'holdingProfit',
+      width: 140,
       render: (value: number) => (
         <Statistic
           value={value}
@@ -3430,6 +3873,7 @@ const Dashboard: React.FC = () => {
       title: <Text style={{ color: 'var(--text-primary)' }}>净收益</Text>,
       dataIndex: 'netProfit',
       key: 'netProfit',
+      width: 140,
       render: (value: number) => (
         <Statistic
           value={value}
@@ -3448,6 +3892,7 @@ const Dashboard: React.FC = () => {
       title: <Text style={{ color: 'var(--text-primary)' }}>持仓变化</Text>,
       dataIndex: 'holdingChange',
       key: 'holdingChange',
+      width: 140,
       render: (change: number) => <HoldingChange value={change} />,
     },
   ];
@@ -3571,12 +4016,13 @@ const Dashboard: React.FC = () => {
             className="tech-card"
             hoverable
             bordered={false}
+            onClick={() => handleWhaleCardClick('all')}
+            style={{ cursor: 'pointer' }}
           >
             <Statistic
-              title={<Text style={{ color: 'var(--text-secondary)' }}>追踪成功率</Text>}
-              value={statsData.successRate}
-              precision={1}
-              suffix="%"
+              title={<Text style={{ color: 'var(--text-secondary)' }}>所有鲸鱼</Text>}
+              value={35}
+              prefix={<UserOutlined style={{ color: 'var(--danger)' }} />}
               valueStyle={{ color: 'var(--danger)', textShadow: 'var(--text-shadow-danger)' }}
             />
           </Card>
@@ -3747,7 +4193,7 @@ const Dashboard: React.FC = () => {
           visible={whaleAddressModalVisible}
           onCancel={() => setWhaleAddressModalVisible(false)}
           footer={null}
-          width={1000}
+          width={1200}
           className="tech-modal"
           style={{ top: 20 }}
         >
@@ -3757,6 +4203,7 @@ const Dashboard: React.FC = () => {
             pagination={false} 
             rowClassName="tech-table-row"
             style={{ background: 'transparent' }}
+            scroll={{ x: 880 }}
           />
         </Modal>
       )}
