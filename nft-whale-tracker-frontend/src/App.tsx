@@ -6,6 +6,7 @@ import Dashboard from './pages/WhaleTrack'
 import Opportunity from './pages/NftSnipe'
 import Strategy from './pages/Strategy'
 import Setting from './pages/Setting'
+import TradingTrend from './pages/TradingTrend'
 
 function App() {
   const [currentPage, setCurrentPage] = useState<string>('1')
@@ -20,6 +21,8 @@ function App() {
         return <Strategy />
       case '4':
         return <Setting />
+      case '5':
+        return <TradingTrend />
       default:
         return <Dashboard />
     }

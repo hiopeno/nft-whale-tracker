@@ -4,7 +4,8 @@ import Icon from '@ant-design/icons';
 import {
   MoneyCollectOutlined,
   SettingOutlined,
-  BulbOutlined
+  BulbOutlined,
+  LineChartOutlined
 } from '@ant-design/icons';
 
 const { Header, Content, Footer, Sider } = Layout;
@@ -166,6 +167,11 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children, setCurrentPage }) => 
               key: '1',
               icon: <WhaleIcon />,
               label: '巨鲸追踪',
+            },
+            {
+              key: '5',
+              icon: <LineChartOutlined />,
+              label: '交易走势',
             },
             {
               key: '2',

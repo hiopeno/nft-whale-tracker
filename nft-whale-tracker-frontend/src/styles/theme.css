@@ -238,6 +238,16 @@ body {
   white-space: nowrap;
 }
 
+/* 确保表格标题与内容对齐 */
+.ant-table-thead > tr > th {
+  white-space: nowrap;
+  text-align: center !important;
+}
+
+.ant-table-tbody > tr > td {
+  text-align: center !important;
+}
+
 /* 表格行样式 */
 .tech-table-row:hover {
   background: var(--bg-hover) !important;
