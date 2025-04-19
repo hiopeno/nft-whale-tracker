@@ -85,13 +85,27 @@ CREATE TABLE IF NOT EXISTS ads_whale_transactions (
 -- 创建临时视图，关联鲸鱼钱包数据
 CREATE TEMPORARY VIEW IF NOT EXISTS tmp_whale_info AS
 SELECT 
-    w.wallet_address,
-    w.whale_type,
-    w.whale_score
+    dwa.wallet_address,
+    dwa.whale_type,
+    CAST(COALESCE(dws.influence_score, 50) AS DECIMAL(10,2)) AS influence_score
 FROM 
-    dim.dim_whale_address w
+    dim.dim_whale_address dwa
+LEFT JOIN
+    dws.dws_whale_daily_stats dws ON dwa.wallet_address = dws.wallet_address 
+    AND dws.stat_date = CURRENT_DATE
 WHERE 
-    w.status = 'ACTIVE';
+    dwa.status = 'ACTIVE'
+    AND dwa.is_whale = TRUE;
+
+-- 查询DWS层收藏集数据获取地板价
+CREATE TEMPORARY VIEW IF NOT EXISTS tmp_collection_info AS
+SELECT 
+    c.contract_address,
+    CAST(COALESCE(c.floor_price_eth, 0) AS DECIMAL(30,10)) AS floor_price_eth
+FROM 
+    dws.dws_collection_daily_stats c
+WHERE 
+    c.collection_date = CURRENT_DATE;
 
 -- 插入数据到目标表
 INSERT INTO ads_whale_transactions
@@ -103,44 +117,45 @@ SELECT
     t.token_id,
     
     -- 时间维度
-    CAST(t.tx_timestamp AS TIMESTAMP) AS tx_timestamp,
+    t.tx_timestamp,
     
     -- 交易方信息
     t.from_address,
     t.to_address,
     COALESCE(from_whale.whale_type, 'NO_WHALE') AS from_whale_type,
     COALESCE(to_whale.whale_type, 'NO_WHALE') AS to_whale_type,
-    CAST(COALESCE(from_whale.whale_score, 0) AS DECIMAL(10,2)) AS from_influence_score,
-    CAST(COALESCE(to_whale.whale_score, 0) AS DECIMAL(10,2)) AS to_influence_score,
+    CAST(COALESCE(from_whale.influence_score, 0) AS DECIMAL(10,2)) AS from_influence_score,
+    CAST(COALESCE(to_whale.influence_score, 0) AS DECIMAL(10,2)) AS to_influence_score,
     
     -- 收藏集信息
     t.collection_name,
     
     -- 交易详情
-    CAST(t.trade_price_eth AS DECIMAL(30,10)) AS trade_price_eth,
-    CAST(t.trade_price_usd AS DECIMAL(30,10)) AS trade_price_usd,
-    CAST(t.floor_price_eth AS DECIMAL(30,10)) AS floor_price_eth,
+    t.trade_price_eth,
+    t.trade_price_usd,
+    COALESCE(c.floor_price_eth, CAST(0 AS DECIMAL(30,10))) AS floor_price_eth,
     CASE 
-        WHEN t.floor_price_eth > 0 THEN CAST(t.trade_price_eth / t.floor_price_eth AS DECIMAL(10,2))
-        ELSE CAST(NULL AS DECIMAL(10,2))
+        WHEN COALESCE(c.floor_price_eth, 0) > 0 THEN CAST(t.trade_price_eth / c.floor_price_eth AS DECIMAL(10,2))
+        ELSE CAST(0 AS DECIMAL(10,2))
     END AS price_to_floor_ratio,
     
     -- 平台信息
     t.platform AS marketplace,
     
     -- 数据源和处理时间
-    'dwd_whale_transaction_detail,dim_whale_address' AS data_source,
+    'dwd_whale_transaction_detail,dim_whale_address,dws_collection_daily_stats' AS data_source,
     CURRENT_TIMESTAMP AS etl_time
 FROM 
     dwd.dwd_whale_transaction_detail t
     LEFT JOIN tmp_whale_info from_whale ON t.from_address = from_whale.wallet_address
     LEFT JOIN tmp_whale_info to_whale ON t.to_address = to_whale.wallet_address
+    LEFT JOIN tmp_collection_info c ON t.contract_address = c.contract_address
 WHERE 
     -- 筛选鲸鱼相关交易
-    (t.from_is_whale = TRUE OR t.to_is_whale = TRUE OR 
-     from_whale.wallet_address IS NOT NULL OR to_whale.wallet_address IS NOT NULL)
+    (t.from_is_whale = TRUE OR t.to_is_whale = TRUE)
     -- 只处理最近两周的数据
     AND t.tx_date BETWEEN CURRENT_DATE - INTERVAL '14' DAY AND CURRENT_DATE;
 
 -- 删除临时视图
-DROP TEMPORARY VIEW IF EXISTS tmp_whale_info; 
+DROP TEMPORARY VIEW IF EXISTS tmp_whale_info;
+DROP TEMPORARY VIEW IF EXISTS tmp_collection_info; 

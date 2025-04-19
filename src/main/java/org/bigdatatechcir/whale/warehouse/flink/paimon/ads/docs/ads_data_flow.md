@@ -2,758 +2,334 @@
 
 ## 1. 概述
 
-本文档详细描述了NFT Whale Tracker项目中ADS层（Application Data Service，应用数据服务层）的数据流转过程。ADS层是数据仓库的最上层，直接面向应用和业务分析需求，主要整合DWS层和DIM层的数据，生成符合特定业务场景的数据产品。
+本文档详细描述了NFT Whale Tracker项目中ADS层（Application Data Service，应用数据服务层）的数据流转过程。ADS层是数据仓库的最上层，直接面向应用和业务分析，提供结构化的数据服务。在完成DWD、DIM和DWS层重构后，ADS层的数据来源发生了调整，现在主要从DWS层获取汇总数据，而不是直接从DWD层获取明细数据。
 
 ## 2. 数据流转架构
 
-整个ADS层的数据流转过程可以分为以下几个关键步骤：
+整个ADS层的数据流转过程可以分为以下几个环节：
 
 ```
-DWS/DIM层数据 -> 主题聚焦 -> 指标筛选 -> 排序与分组 -> ADS层表
+     ┌───────────┐           ┌───────────┐           ┌───────────┐
+     │  DWD层    │           │  DIM层    │           │  DWS层    │
+     │(明细数据) │           │(维度数据) │           │(汇总数据) │
+     └─────┬─────┘           └─────┬─────┘           └─────┬─────┘
+           │                       │                       │
+           └───────────────────────┼───────────────────────┘
+                                   │
+                                   ▼
+                          ┌─────────────────┐
+                          │     ADS层       │
+                          │ (应用数据服务)  │
+                          └────────┬────────┘
+                                   │
+                                   ▼
+                          ┌─────────────────┐
+                          │    应用层       │
+                          │  (报表/API等)   │
+                          └─────────────────┘
 ```
 
-## 3. 数据处理流程
+ADS层的主要数据来源是DWS层的汇总数据表，而DWS层则基于DWD层的明细数据和DIM层的维度数据构建。这种分层架构确保了数据处理的高效性和数据服务的灵活性。
 
-### 3.1 ads_top_profit_whales 处理流程
+## 3. 数据源与依赖关系
 
-该表存储收益额Top10鲸鱼钱包，主要来源于DWS层的`dws_whale_daily_stats`表和DIM层的`dim_whale_address`表。
+### 3.1 数据源说明
 
-处理流程：
-1. 从`dws_whale_daily_stats`和`dim_whale_address`汇总鲸鱼收益数据
-2. 按总收益额进行排序
-3. 识别每个鲸鱼的最佳收藏集
-4. 提取Top10收益鲸鱼列表
+根据重构后的分层架构，ADS层主要依赖以下数据源：
 
-SQL处理逻辑示例：
-```sql
-INSERT INTO ads_top_profit_whales
-WITH profit_ranks AS (
-    SELECT 
-        CURRENT_DATE AS snapshot_date,
-        dwa.wallet_address,
-        dwa.whale_type,
-        dwa.total_profit_eth,
-        dwa.total_profit_usd,
-        dwa.total_tx_count,
-        dwa.first_track_date,
-        DATEDIFF(CURRENT_DATE, dwa.first_track_date) AS tracking_days,
-        dwa.whale_score AS influence_score,
-        ROW_NUMBER() OVER (ORDER BY dwa.total_profit_eth DESC) AS rank_num
-    FROM 
-        dim_whale_address dwa
-    WHERE 
-        dwa.is_whale = TRUE
-        AND dwa.status = 'ACTIVE'
-),
-whale_profit_stats AS (
-    -- 计算近期利润
-    SELECT 
-        wallet_address,
-        SUM(CASE WHEN stat_date >= DATE_SUB(CURRENT_DATE, 7) THEN daily_profit_eth ELSE 0 END) AS profit_7d_eth,
-        SUM(CASE WHEN stat_date >= DATE_SUB(CURRENT_DATE, 30) THEN daily_profit_eth ELSE 0 END) AS profit_30d_eth
-    FROM 
-        dws_whale_daily_stats
-    GROUP BY 
-        wallet_address
-),
-best_collections AS (
-    -- 识别最佳收藏集
-    SELECT 
-        w.wallet_address,
-        c.collection_name AS best_collection,
-        MAX(cp.profit_eth) AS best_collection_profit_eth
-    FROM (
-        SELECT 
-            wallet_address,
-            contract_address,
-            SUM(CASE WHEN from_address = wallet_address THEN trade_price_eth ELSE 0 END) - 
-            SUM(CASE WHEN to_address = wallet_address THEN trade_price_eth ELSE 0 END) AS profit_eth
-        FROM 
-            dwd_whale_transaction_detail
-        WHERE 
-            (from_is_whale = TRUE OR to_is_whale = TRUE)
-        GROUP BY 
-            wallet_address, 
-            contract_address
-    ) cp
-    JOIN 
-        profit_ranks w ON cp.wallet_address = w.wallet_address
-    JOIN 
-        dim_collection_info c ON cp.contract_address = c.collection_address
-    GROUP BY 
-        w.wallet_address,
-        c.collection_name
-)
-SELECT 
-    r.snapshot_date,
-    r.wallet_address,
-    r.rank_num,
-    CASE 
-        WHEN r.whale_type = 'SMART' THEN 'Smart Whale'
-        WHEN r.whale_type = 'DUMB' THEN 'Dumb Whale'
-        ELSE 'Tracking Whale'
-    END AS wallet_tag,
-    r.total_profit_eth,
-    r.total_profit_usd,
-    COALESCE(ps.profit_7d_eth, 0) AS profit_7d_eth,
-    COALESCE(ps.profit_30d_eth, 0) AS profit_30d_eth,
-    COALESCE(bc.best_collection, 'Unknown') AS best_collection,
-    COALESCE(bc.best_collection_profit_eth, 0) AS best_collection_profit_eth,
-    r.total_tx_count,
-    r.first_track_date,
-    r.tracking_days,
-    r.influence_score,
-    'dws_whale_daily_stats,dim_whale_address' AS data_source,
-    CURRENT_TIMESTAMP AS etl_time
-FROM 
-    profit_ranks r
-LEFT JOIN 
-    whale_profit_stats ps ON r.wallet_address = ps.wallet_address
-LEFT JOIN 
-    best_collections bc ON r.wallet_address = bc.wallet_address
-WHERE 
-    r.rank_num <= 10;
-```
+1. **DWS层数据**：
+   - `dws_whale_daily_stats` - 鲸鱼每日统计表
+   - `dws_collection_daily_stats` - 收藏集每日统计表
+   - `dws_collection_whale_flow` - 收藏集鲸鱼资金流向表
+   - `dws_whale_portfolio_trend` - 鲸鱼投资组合趋势表
+   - `dws_collection_whale_ownership` - 收藏集鲸鱼持有统计表
+   - `dws_wallet_daily_stats` - 钱包每日统计表
 
-### 3.2 ads_top_roi_whales 处理流程
+2. **DIM层数据**：
+   - `dim_whale_address` - 鲸鱼钱包维度表
+   - `dim_collection_info` - 收藏集维度表
 
-该表存储收益率Top10鲸鱼钱包，主要来源于DWS层的`dws_whale_daily_stats`表和DIM层的`dim_whale_address`表。
+3. **DWD层数据**（仅在特定场景下直接使用）：
+   - `dwd_whale_transaction_detail` - 鲸鱼交易明细表
 
-处理流程：
-1. 从`dws_whale_daily_stats`和`dim_whale_address`汇总鲸鱼ROI数据
-2. 按投资回报率进行排序
-3. 计算每个钱包的最佳收藏集ROI和持有时间
-4. 提取Top10 ROI鲸鱼列表
+### 3.2 依赖关系
 
-SQL处理逻辑示例：
-```sql
-INSERT INTO ads_top_roi_whales
-WITH roi_ranks AS (
-    SELECT 
-        CURRENT_DATE AS snapshot_date,
-        dwa.wallet_address,
-        dwa.whale_type,
-        dwa.roi_percentage,
-        dwa.total_buy_volume_eth,
-        dwa.total_sell_volume_eth,
-        dwa.total_profit_eth,
-        dwa.first_track_date,
-        dwa.whale_score AS influence_score,
-        dwa.avg_hold_days,
-        ROW_NUMBER() OVER (ORDER BY dwa.roi_percentage DESC) AS rank_num
-    FROM 
-        dim_whale_address dwa
-    WHERE 
-        dwa.is_whale = TRUE
-        AND dwa.status = 'ACTIVE'
-        AND dwa.total_buy_volume_eth > 0 -- 确保有有效的ROI计算
-        AND dwa.total_tx_count >= 10 -- 确保有足够的交易记录
-),
-recent_roi AS (
-    -- 计算近期ROI
-    SELECT 
-        wallet_address,
-        CASE 
-            WHEN SUM(CASE WHEN stat_date >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN daily_buy_volume_eth ELSE 0 END) > 0 
-            THEN SUM(CASE WHEN stat_date >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN daily_profit_eth ELSE 0 END) * 100 / 
-                 SUM(CASE WHEN stat_date >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN daily_buy_volume_eth ELSE 0 END)
-            ELSE 0
-        END AS roi_7d_percentage,
-        CASE 
-            WHEN SUM(CASE WHEN stat_date >= TIMESTAMPADD(DAY, -30, CURRENT_DATE) THEN daily_buy_volume_eth ELSE 0 END) > 0 
-            THEN SUM(CASE WHEN stat_date >= TIMESTAMPADD(DAY, -30, CURRENT_DATE) THEN daily_profit_eth ELSE 0 END) * 100 / 
-                 SUM(CASE WHEN stat_date >= TIMESTAMPADD(DAY, -30, CURRENT_DATE) THEN daily_buy_volume_eth ELSE 0 END)
-            ELSE 0
-        END AS roi_30d_percentage
-    FROM 
-        dws_whale_daily_stats
-    GROUP BY 
-        wallet_address
-),
-wallet_collection_roi AS (
-    -- 计算每个钱包的每个收藏集ROI
-    SELECT
-        t.contract_address,
-        SUM(CASE WHEN t.to_address = w.wallet_address THEN t.trade_price_eth ELSE 0 END) AS buy_value,
-        SUM(CASE WHEN t.from_address = w.wallet_address THEN t.trade_price_eth ELSE 0 END) AS sell_value,
-        CASE 
-            WHEN SUM(CASE WHEN t.to_address = w.wallet_address THEN t.trade_price_eth ELSE 0 END) > 0
-            THEN (SUM(CASE WHEN t.from_address = w.wallet_address THEN t.trade_price_eth ELSE 0 END) - 
-                 SUM(CASE WHEN t.to_address = w.wallet_address THEN t.trade_price_eth ELSE 0 END)) * 100 /
-                 SUM(CASE WHEN t.to_address = w.wallet_address THEN t.trade_price_eth ELSE 0 END)
-            ELSE 0
-        END AS roi_percentage,
-        w.wallet_address
-    FROM 
-        dwd_whale_transaction_detail t
-    JOIN 
-        roi_ranks w 
-    ON 
-        t.from_address = w.wallet_address OR t.to_address = w.wallet_address
-    WHERE 
-        (t.from_is_whale = TRUE OR t.to_is_whale = TRUE)
-    GROUP BY 
-        t.contract_address,
-        w.wallet_address
-    HAVING 
-        SUM(CASE WHEN t.to_address = w.wallet_address THEN t.trade_price_eth ELSE 0 END) > 0
-),
-collection_roi_ranked AS (
-    -- 为每个钱包的收藏集ROI排序
-    SELECT
-        wallet_address,
-        contract_address,
-        roi_percentage,
-        ROW_NUMBER() OVER (PARTITION BY wallet_address ORDER BY roi_percentage DESC) AS roi_rank
-    FROM 
-        wallet_collection_roi
-),
-best_collection_roi AS (
-    -- 选择每个钱包的最佳ROI收藏集
-    SELECT 
-        cr.wallet_address,
-        c.collection_name AS best_collection_roi,
-        cr.roi_percentage AS best_collection_roi_percentage
-    FROM 
-        collection_roi_ranked cr
-    JOIN 
-        dim_collection_info c ON cr.contract_address = c.collection_address
-    WHERE 
-        cr.roi_rank = 1
-)
-SELECT 
-    r.snapshot_date,
-    r.wallet_address,
-    CAST(r.rank_num AS INT) AS rank_num,
-    CASE 
-        WHEN r.whale_type = 'SMART' THEN 'Smart Whale'
-        WHEN r.whale_type = 'DUMB' THEN 'Dumb Whale'
-        ELSE 'Tracking Whale'
-    END AS wallet_tag,
-    r.roi_percentage,
-    r.total_buy_volume_eth,
-    r.total_sell_volume_eth,
-    r.total_profit_eth,
-    COALESCE(rr.roi_7d_percentage, 0) AS roi_7d_percentage,
-    COALESCE(rr.roi_30d_percentage, 0) AS roi_30d_percentage,
-    COALESCE(bc.best_collection_roi, 'Unknown') AS best_collection_roi,
-    COALESCE(bc.best_collection_roi_percentage, 0) AS best_collection_roi_percentage,
-    r.avg_hold_days,
-    r.first_track_date,
-    r.influence_score,
-    'dws_whale_daily_stats,dim_whale_address' AS data_source,
-    CURRENT_TIMESTAMP AS etl_time
-FROM 
-    roi_ranks r
-LEFT JOIN 
-    recent_roi rr ON r.wallet_address = rr.wallet_address
-LEFT JOIN 
-    best_collection_roi bc ON r.wallet_address = bc.wallet_address
-WHERE 
-    r.rank_num <= 10;
-```
+ADS层的各个表与DWS、DIM层表之间的主要依赖关系如下：
 
-### 3.3 ads_whale_tracking_list 处理流程
+| ADS层表 | 主要依赖数据源 |
+|---------|---------------|
+| ads_top_profit_whales | dws_whale_daily_stats, dim_whale_address |
+| ads_top_roi_whales | dws_whale_daily_stats, dim_whale_address |
+| ads_whale_tracking_list | dim_whale_address, dws_whale_daily_stats |
+| ads_tracking_whale_collection_flow | dws_collection_whale_flow, dim_collection_info |
+| ads_smart_whale_collection_flow | dws_collection_whale_flow, dim_whale_address |
+| ads_dumb_whale_collection_flow | dws_collection_whale_flow, dim_whale_address |
+| ads_whale_transactions | dwd_whale_transaction_detail, dim_whale_address, dws_whale_daily_stats, dws_collection_daily_stats |
 
-该表存储鲸鱼追踪名单，包括追踪中、聪明、愚蠢类型的鲸鱼，主要来源于DIM层的`dim_whale_address`表和DWS层的`dws_whale_daily_stats`表。
+## 4. 数据处理流程
 
-处理流程：
-1. 从`dim_whale_address`获取所有活跃鲸鱼
-2. 关联`dws_whale_daily_stats`获取最新统计数据
-3. 生成追踪ID和统计数据
-4. 合并所有类型的鲸鱼名单
+### 4.1 鲸鱼排行榜相关表
 
-SQL处理逻辑示例：
-```sql
-INSERT INTO ads_whale_tracking_list
-SELECT 
-    CURRENT_DATE AS snapshot_date,
-    dwa.wallet_address,
-    dwa.whale_type AS wallet_type,
-    CONCAT('WHL_', DATE_FORMAT(CURRENT_DATE, 'yyyyMMdd'), 
-           LPAD(CAST(ROW_NUMBER() OVER (ORDER BY dwa.whale_score DESC) AS STRING), 2, '0')) AS tracking_id,
-    dwa.first_track_date,
-    DATEDIFF(CURRENT_DATE, dwa.first_track_date) AS tracking_days,
-    dwa.last_active_date,
-    dwa.status,
-    dwa.total_profit_eth,
-    dwa.total_profit_usd,
-    dwa.roi_percentage,
-    dwa.whale_score AS influence_score,
-    dwa.total_tx_count,
-    dwa.success_rate,
-    dwa.favorite_collections,
-    dwa.inactive_days,
-    COALESCE(dws.is_top30_volume, FALSE) AS is_top30_volume,
-    COALESCE(dws.is_top100_balance, FALSE) AS is_top100_balance,
-    COALESCE(dws.rank_by_volume, 0) AS rank_by_volume,
-    COALESCE(dws.rank_by_profit, 0) AS rank_by_profit,
-    'dws_whale_daily_stats,dim_whale_address' AS data_source,
-    CURRENT_TIMESTAMP AS etl_time
-FROM 
-    dim_whale_address dwa
-LEFT JOIN 
-    dws_whale_daily_stats dws ON dwa.wallet_address = dws.wallet_address AND dws.stat_date = CURRENT_DATE
-WHERE 
-    dwa.is_whale = TRUE
-    AND (dwa.status = 'ACTIVE' OR dwa.inactive_days <= 7); -- 包括最近7天变为不活跃的鲸鱼
-```
+#### 4.1.1 ads_top_profit_whales（收益额Top鲸鱼）
 
-### 3.4 ads_tracking_whale_collection_flow 处理流程
+该表存储收益额排名靠前的鲸鱼钱包信息，主要用于展示哪些鲸鱼钱包在NFT交易中获得的利润最高。
 
-该表存储工作集收藏集中追踪鲸鱼净流入/流出Top10，主要来源于DWS层的`dws_collection_whale_flow`表。
+**处理流程**：
+1. 从DWS层`dws_whale_daily_stats`表聚合鲸鱼钱包的交易与收益数据
+   - 计算总利润（daily_profit_eth的累计和）
+   - 计算总交易次数（统计记录数）
+   - 获取影响力评分（influence_score）
+2. 关联DIM层`dim_whale_address`表获取鲸鱼类型、首次追踪日期和状态信息
+3. 计算追踪天数和利润相关指标
+4. 识别每个鲸鱼的最佳收藏集（产生最高利润的收藏集）
+5. 根据总收益排序，提取Top10
+6. 通过临时计算视图获取近期（7天、30天）的利润数据
 
-处理流程：
-1. 从`dws_collection_whale_flow`获取收藏集的鲸鱼流向数据
-2. 按净流入和净流出分别计算排名
-3. 关联收藏集维度获取更多信息
-4. 提取净流入和净流出Top10列表
+#### 4.1.2 ads_top_roi_whales（收益率Top鲸鱼）
 
-SQL处理逻辑示例：
-```sql
-INSERT INTO ads_tracking_whale_collection_flow
-WITH inflow_collections AS (
-    -- 计算净流入Top10
-    SELECT 
-        CURRENT_DATE AS snapshot_date,
-        cf.collection_address,
-        MAX(cf.collection_name) AS collection_name,
-        'INFLOW' AS flow_direction,
-        ROW_NUMBER() OVER (ORDER BY SUM(cf.net_flow_eth) DESC) AS rank_num,
-        SUM(cf.net_flow_eth) AS net_flow_eth,
-        SUM(cf.net_flow_eth) * 2500.00 AS net_flow_usd, -- 示例USD汇率
-        SUM(cf.accu_net_flow_7d) AS net_flow_7d_eth,
-        SUM(cf.accu_net_flow_30d) AS net_flow_30d_eth,
-        AVG(cf.floor_price_eth) AS floor_price_eth,
-        NULL AS floor_price_change_1d, -- 需要其他数据源
-        SUM(cf.unique_whale_buyers) AS unique_whale_buyers,
-        SUM(cf.unique_whale_sellers) AS unique_whale_sellers,
-        AVG(cf.whale_trading_percentage) AS whale_trading_percentage,
-        SUM(CASE WHEN cf.whale_type = 'SMART' THEN cf.net_flow_eth ELSE 0 END) / 
-        NULLIF(SUM(cf.net_flow_eth), 0) * 100 AS smart_whale_percentage,
-        SUM(CASE WHEN cf.whale_type = 'DUMB' THEN cf.net_flow_eth ELSE 0 END) / 
-        NULLIF(SUM(cf.net_flow_eth), 0) * 100 AS dumb_whale_percentage,
-        CASE 
-            WHEN SUM(cf.net_flow_eth) > 10 THEN 'STRONG_INFLOW'
-            WHEN SUM(cf.net_flow_eth) > 5 THEN 'MODERATE_INFLOW'
-            ELSE 'SLIGHT_INFLOW'
-        END AS trend_indicator
-    FROM 
-        dws_collection_whale_flow cf
-    WHERE 
-        cf.stat_date = CURRENT_DATE
-        AND cf.is_in_working_set = TRUE
-    GROUP BY 
-        cf.collection_address
-    HAVING 
-        SUM(cf.net_flow_eth) > 0
-),
-outflow_collections AS (
-    -- 计算净流出Top10
-    SELECT 
-        CURRENT_DATE AS snapshot_date,
-        cf.collection_address,
-        MAX(cf.collection_name) AS collection_name,
-        'OUTFLOW' AS flow_direction,
-        ROW_NUMBER() OVER (ORDER BY SUM(cf.net_flow_eth) ASC) AS rank_num,
-        SUM(cf.net_flow_eth) AS net_flow_eth,
-        SUM(cf.net_flow_eth) * 2500.00 AS net_flow_usd, -- 示例USD汇率
-        SUM(cf.accu_net_flow_7d) AS net_flow_7d_eth,
-        SUM(cf.accu_net_flow_30d) AS net_flow_30d_eth,
-        AVG(cf.floor_price_eth) AS floor_price_eth,
-        NULL AS floor_price_change_1d, -- 需要其他数据源
-        SUM(cf.unique_whale_buyers) AS unique_whale_buyers,
-        SUM(cf.unique_whale_sellers) AS unique_whale_sellers,
-        AVG(cf.whale_trading_percentage) AS whale_trading_percentage,
-        SUM(CASE WHEN cf.whale_type = 'SMART' THEN cf.net_flow_eth ELSE 0 END) / 
-        NULLIF(SUM(cf.net_flow_eth), 0) * 100 AS smart_whale_percentage,
-        SUM(CASE WHEN cf.whale_type = 'DUMB' THEN cf.net_flow_eth ELSE 0 END) / 
-        NULLIF(SUM(cf.net_flow_eth), 0) * 100 AS dumb_whale_percentage,
-        CASE 
-            WHEN SUM(cf.net_flow_eth) < -10 THEN 'STRONG_OUTFLOW'
-            WHEN SUM(cf.net_flow_eth) < -5 THEN 'MODERATE_OUTFLOW'
-            ELSE 'SLIGHT_OUTFLOW'
-        END AS trend_indicator
-    FROM 
-        dws_collection_whale_flow cf
-    WHERE 
-        cf.stat_date = CURRENT_DATE
-        AND cf.is_in_working_set = TRUE
-    GROUP BY 
-        cf.collection_address
-    HAVING 
-        SUM(cf.net_flow_eth) < 0
-)
-SELECT 
-    snapshot_date,
-    collection_address,
-    collection_name,
-    flow_direction,
-    rank_num,
-    net_flow_eth,
-    net_flow_usd,
-    net_flow_7d_eth,
-    net_flow_30d_eth,
-    floor_price_eth,
-    floor_price_change_1d,
-    unique_whale_buyers,
-    unique_whale_sellers,
-    whale_trading_percentage,
-    smart_whale_percentage,
-    dumb_whale_percentage,
-    trend_indicator,
-    'dws_collection_whale_flow' AS data_source,
-    CURRENT_TIMESTAMP AS etl_time
-FROM 
-    inflow_collections
-WHERE 
-    rank_num <= 10
+该表存储收益率排名靠前的鲸鱼钱包信息，主要用于展示哪些鲸鱼钱包在NFT交易中的投资回报率最高。
 
-UNION ALL
+**处理流程**：
+1. 从DWS层`dws_whale_daily_stats`表获取鲸鱼钱包的交易和收益数据
+2. 关联DIM层`dim_whale_address`表获取鲸鱼类型和标签
+3. 计算各鲸鱼钱包的ROI（投资回报率）
+4. 根据ROI排序，提取Top10
+5. 计算相关指标（成功交易比例、交易次数等）
 
-SELECT 
-    snapshot_date,
-    collection_address,
-    collection_name,
-    flow_direction,
-    rank_num,
-    net_flow_eth,
-    net_flow_usd,
-    net_flow_7d_eth,
-    net_flow_30d_eth,
-    floor_price_eth,
-    floor_price_change_1d,
-    unique_whale_buyers,
-    unique_whale_sellers,
-    whale_trading_percentage,
-    smart_whale_percentage,
-    dumb_whale_percentage,
-    trend_indicator,
-    'dws_collection_whale_flow' AS data_source,
-    CURRENT_TIMESTAMP AS etl_time
-FROM 
-    outflow_collections
-WHERE 
-    rank_num <= 10;
-```
+### 4.2 收藏集流向相关表
 
-### 3.5 ads_smart_whale_collection_flow 与 ads_dumb_whale_collection_flow 处理流程
+#### 4.2.1 ads_tracking_whale_collection_flow（收藏集鲸鱼流向Top）
 
-这两个表分别存储工作集收藏集中聪明鲸鱼和愚蠢鲸鱼的净流入/流出Top10，主要来源于DWS层的`dws_collection_whale_flow`表，处理逻辑类似，这里以聪明鲸鱼为例。
+该表存储鲸鱼资金净流入/流出排名靠前的收藏集信息，用于分析哪些收藏集受到鲸鱼青睐或抛弃。
 
-处理流程：
-1. 从`dws_collection_whale_flow`筛选对应鲸鱼类型的交易数据
-2. 按净流入和净流出分别计算排名
-3. 提取净流入和净流出Top10列表
+**处理流程**：
+1. 从DWS层`dws_collection_whale_flow`表获取收藏集的鲸鱼资金流向数据
+2. 计算各收藏集的鲸鱼净流入/流出金额
+3. 分别按照净流入和净流出排序，分别提取Top10
+4. 计算7天和30天的累计净流量
+5. 关联DIM层收藏集信息，添加相关属性
 
-SQL处理逻辑示例（以聪明鲸鱼为例）：
-```sql
-INSERT INTO ads_smart_whale_collection_flow
-WITH smart_inflow_collections AS (
-    -- 计算聪明鲸鱼净流入Top10
-    SELECT 
-        CURRENT_DATE AS snapshot_date,
-        cf.collection_address,
-        cf.collection_name,
-        'INFLOW' AS flow_direction,
-        ROW_NUMBER() OVER (ORDER BY cf.net_flow_eth DESC) AS rank_num,
-        cf.net_flow_eth AS smart_whale_net_flow_eth,
-        cf.net_flow_eth * 2500.00 AS smart_whale_net_flow_usd, -- 示例USD汇率
-        cf.accu_net_flow_7d AS smart_whale_net_flow_7d_eth,
-        cf.accu_net_flow_30d AS smart_whale_net_flow_30d_eth,
-        cf.unique_whale_buyers AS smart_whale_buyers,
-        cf.unique_whale_sellers AS smart_whale_sellers,
-        cf.whale_buy_volume_eth AS smart_whale_buy_volume_eth,
-        cf.whale_sell_volume_eth AS smart_whale_sell_volume_eth,
-        cf.whale_trading_percentage AS smart_whale_trading_percentage,
-        cf.floor_price_eth,
-        NULL AS floor_price_change_1d, -- 需要其他数据源
-        CASE 
-            WHEN cf.net_flow_eth > 10 THEN 'STRONG_INFLOW'
-            WHEN cf.net_flow_eth > 5 THEN 'MODERATE_INFLOW'
-            ELSE 'SLIGHT_INFLOW'
-        END AS trend_indicator
-    FROM 
-        dws_collection_whale_flow cf
-    WHERE 
-        cf.stat_date = CURRENT_DATE
-        AND cf.is_in_working_set = TRUE
-        AND cf.whale_type = 'SMART'
-        AND cf.net_flow_eth > 0
-),
-smart_outflow_collections AS (
-    -- 计算聪明鲸鱼净流出Top10
-    SELECT 
-        CURRENT_DATE AS snapshot_date,
-        cf.collection_address,
-        cf.collection_name,
-        'OUTFLOW' AS flow_direction,
-        ROW_NUMBER() OVER (ORDER BY cf.net_flow_eth ASC) AS rank_num,
-        cf.net_flow_eth AS smart_whale_net_flow_eth,
-        cf.net_flow_eth * 2500.00 AS smart_whale_net_flow_usd, -- 示例USD汇率
-        cf.accu_net_flow_7d AS smart_whale_net_flow_7d_eth,
-        cf.accu_net_flow_30d AS smart_whale_net_flow_30d_eth,
-        cf.unique_whale_buyers AS smart_whale_buyers,
-        cf.unique_whale_sellers AS smart_whale_sellers,
-        cf.whale_buy_volume_eth AS smart_whale_buy_volume_eth,
-        cf.whale_sell_volume_eth AS smart_whale_sell_volume_eth,
-        cf.whale_trading_percentage AS smart_whale_trading_percentage,
-        cf.floor_price_eth,
-        NULL AS floor_price_change_1d, -- 需要其他数据源
-        CASE 
-            WHEN cf.net_flow_eth < -10 THEN 'STRONG_OUTFLOW'
-            WHEN cf.net_flow_eth < -5 THEN 'MODERATE_OUTFLOW'
-            ELSE 'SLIGHT_OUTFLOW'
-        END AS trend_indicator
-    FROM 
-        dws_collection_whale_flow cf
-    WHERE 
-        cf.stat_date = CURRENT_DATE
-        AND cf.is_in_working_set = TRUE
-        AND cf.whale_type = 'SMART'
-        AND cf.net_flow_eth < 0
-)
-SELECT 
-    snapshot_date,
-    collection_address,
-    collection_name,
-    flow_direction,
-    rank_num,
-    smart_whale_net_flow_eth,
-    smart_whale_net_flow_usd,
-    smart_whale_net_flow_7d_eth,
-    smart_whale_net_flow_30d_eth,
-    smart_whale_buyers,
-    smart_whale_sellers,
-    smart_whale_buy_volume_eth,
-    smart_whale_sell_volume_eth,
-    smart_whale_trading_percentage,
-    floor_price_eth,
-    floor_price_change_1d,
-    trend_indicator,
-    'dws_collection_whale_flow' AS data_source,
-    CURRENT_TIMESTAMP AS etl_time
-FROM 
-    smart_inflow_collections
-WHERE 
-    rank_num <= 10
+#### 4.2.2 ads_smart_whale_collection_flow（聪明鲸鱼收藏集流向）
 
-UNION ALL
+该表存储聪明鲸鱼（赚钱能力强的鲸鱼）资金流向的收藏集信息，用于分析有盈利能力的鲸鱼的投资偏好。
 
-SELECT 
-    snapshot_date,
-    collection_address,
-    collection_name,
-    flow_direction,
-    rank_num,
-    smart_whale_net_flow_eth,
-    smart_whale_net_flow_usd,
-    smart_whale_net_flow_7d_eth,
-    smart_whale_net_flow_30d_eth,
-    smart_whale_buyers,
-    smart_whale_sellers,
-    smart_whale_buy_volume_eth,
-    smart_whale_sell_volume_eth,
-    smart_whale_trading_percentage,
-    floor_price_eth,
-    floor_price_change_1d,
-    trend_indicator,
-    'dws_collection_whale_flow' AS data_source,
-    CURRENT_TIMESTAMP AS etl_time
-FROM 
-    smart_outflow_collections
-WHERE 
-    rank_num <= 10;
-```
+**处理流程**：
+1. 从DWS层`dws_collection_whale_flow`和`dws_whale_daily_stats`表获取数据
+2. 筛选出聪明鲸鱼（whale_type为'SMART'）的交易记录
+3. 计算各收藏集的聪明鲸鱼净流入/流出金额
+4. 分别按照净流入和净流出排序，提取Top收藏集
+5. 计算聪明鲸鱼交易占该收藏集总交易的比例
 
-## 4. 执行流程与调度
+#### 4.2.3 ads_dumb_whale_collection_flow（愚蠢鲸鱼收藏集流向）
 
-### 4.1 完整执行流程
+该表存储愚蠢鲸鱼（亏损较多的鲸鱼）资金流向的收藏集信息，用于分析哪些收藏集可能存在价值高估。
+
+**处理流程**：
+1. 从DWS层`dws_collection_whale_flow`和`dws_whale_daily_stats`表获取数据
+2. 筛选出愚蠢鲸鱼（whale_type为'DUMB'）的交易记录
+3. 计算各收藏集的愚蠢鲸鱼净流入/流出金额
+4. 分别按照净流入和净流出排序，提取Top收藏集
+5. 计算愚蠢鲸鱼交易占该收藏集总交易的比例
+
+### 4.3 鲸鱼追踪相关表
+
+#### 4.3.1 ads_whale_tracking_list（鲸鱼追踪名单）
+
+该表存储值得追踪的鲸鱼钱包信息，用于持续监控有影响力鲸鱼的交易行为。
+
+**处理流程**：
+1. 从DWS层`dws_whale_daily_stats`表聚合鲸鱼钱包数据
+   - 计算总利润和利润转化率
+   - 获取影响力评分（influence_score）
+   - 获取交易成功率（success_rate_30d）
+   - 获取交易过的收藏集数量
+2. 关联DIM层`dim_whale_address`表获取鲸鱼基础信息
+   - 钱包地址和类型
+   - 首次追踪日期和最后活跃日期
+   - 状态信息
+3. 通过现有数据计算其他指标
+   - 根据最后活跃日期计算不活跃天数
+   - 根据首次追踪日期计算追踪天数
+   - 生成追踪ID（根据影响力评分排序）
+4. 关联当天的DWS层数据获取排名信息
+5. 筛选活跃或短期不活跃（7天内）的鲸鱼钱包
+
+### 4.4 交易明细相关表
+
+#### 4.4.1 ads_whale_transactions（鲸鱼交易数据）
+
+该表存储鲸鱼相关的交易记录，用于详细分析鲸鱼的交易行为。
+
+**处理流程**：
+1. 从DWD层`dwd_whale_transaction_detail`表获取鲸鱼交易明细
+2. 创建临时视图关联鲸鱼信息
+   - 关联DIM层`dim_whale_address`表获取鲸鱼类型信息
+   - 关联DWS层`dws_whale_daily_stats`表获取影响力评分（influence_score）
+3. 创建临时视图关联收藏集信息
+   - 关联DWS层`dws_collection_daily_stats`表获取收藏集地板价信息
+4. 整合交易明细与鲸鱼、收藏集信息
+5. 计算价格相对于地板价的比率
+6. 筛选最近两周的数据
+7. 格式化结果，补充空值，生成最终数据
+
+## 5. 执行流程与调度
+
+### 5.1 完整执行流程
 
 ADS层数据处理通常按以下顺序执行：
 
-1. 执行`ads_top_profit_whales`和`ads_top_roi_whales`表的数据处理：
-   ```bash
-   ./run_ads_whale_top_lists.sh
-   ```
+1. **鲸鱼排行榜作业**：
+   - 生成`ads_top_profit_whales`和`ads_top_roi_whales`表
+   - 脚本：`run_ads_whale_top_lists.sh`
 
-2. 执行`ads_whale_tracking_list`表的数据处理：
-   ```bash
-   ./run_ads_whale_tracking.sh
-   ```
+2. **鲸鱼追踪名单作业**：
+   - 生成`ads_whale_tracking_list`表
+   - 脚本：`run_ads_whale_tracking.sh`
 
-3. 执行`ads_tracking_whale_collection_flow`、`ads_smart_whale_collection_flow`和`ads_dumb_whale_collection_flow`表的数据处理：
-   ```bash
-   ./run_ads_collection_flows.sh
-   ```
+3. **收藏集流向作业**：
+   - 生成`ads_tracking_whale_collection_flow`、`ads_smart_whale_collection_flow`和`ads_dumb_whale_collection_flow`表
+   - 脚本：`run_ads_collection_flows.sh`
 
-### 4.2 调度策略
+4. **鲸鱼交易数据作业**：
+   - 生成`ads_whale_transactions`表
+   - 脚本：`run_ads_whale_transactions.sh`
 
-ADS层数据处理通常在DWS层数据完成处理后执行，建议采用以下调度策略：
+### 5.2 调度策略
 
-- **调度频率**：每日一次，在DWS层处理完成后
+ADS层数据处理通常在DWD、DIM和DWS层数据处理完成后执行：
 
+- **调度频率**：每日一次
+- **调度时间**：凌晨3:00（在DWS层作业完成后）
 - **依赖关系**：
-  - 依赖DWS层和DIM层相关表的处理完成
-  - 所有ADS层表可并行处理
+  - 依赖DWS层数据处理完成
+  - 依赖DIM层数据更新完成
+- **超时设置**：45分钟
+- **失败处理**：失败时自动重试1次，然后告警
 
-- **超时设置**：30分钟
+### 5.3 数据更新策略
 
-- **失败处理**：失败时自动重试2次，然后告警
+ADS层表的数据更新策略如下：
 
-### 4.3 数据质量监控
+1. **全量更新**：
+   - `ads_top_profit_whales`
+   - `ads_top_roi_whales`
+   - `ads_tracking_whale_collection_flow`
+   - `ads_smart_whale_collection_flow`
+   - `ads_dumb_whale_collection_flow`
+   - `ads_whale_tracking_list`
 
-ADS层应设置以下数据质量监控规则：
+2. **增量更新**：
+   - `ads_whale_transactions`（每日仅处理最近14天的数据）
+
+## 6. 数据质量控制
+
+### 6.1 数据质量规则
+
+ADS层实施以下数据质量控制规则：
 
 1. **完整性检查**：
-   - 确保Top榜单有足够的记录数
-   - 检查关键字段不为空
+   - 确保排行榜类表记录数符合预期（如Top10表应该有10条记录）
+   - 验证关键字段无空值
 
 2. **准确性检查**：
-   - 验证排名序列是否连续
-   - 检查金额和占比计算是否准确
+   - 验证汇总数值与DWS层一致
+   - 验证排名计算正确
 
-3. **一致性检查**：
-   - 确保相同指标在不同报表中的一致性
-   - 检查排名逻辑的一致性
+3. **时效性检查**：
+   - 确保每日有当天的快照数据
+   - 监控作业执行时间
 
-## 5. 数据应用场景
+### 6.2 异常处理机制
 
-ADS层的数据主要支持以下应用场景：
+对于发现的数据质量问题，采取以下处理机制：
 
-1. **鲸鱼绩效排行榜**：
-   - 展示最赚钱的鲸鱼钱包
-   - 展示投资回报率最高的鲸鱼钱包
+1. **告警通知**：
+   - 数据异常时通过邮件/消息通知运维团队
+   - 记录详细的错误日志
 
-2. **鲸鱼追踪名单**：
-   - 提供完整的鲸鱼追踪名单
-   - 标记鲸鱼的类型和活跃状态
+2. **数据修复**：
+   - 对于数据缺失，通过手动触发脚本重新生成
+   - 对于数据错误，先修复上游数据源，再重新执行ADS层作业
 
-3. **收藏集鲸鱼流向分析**：
-   - 监控工作集收藏集的鲸鱼资金流向
-   - 对比聪明鲸鱼和愚蠢鲸鱼的行为差异
+## 7. 典型应用场景
 
-4. **市场趋势预测**：
-   - 根据鲸鱼流向预测市场趋势
-   - 发现潜在的投资机会
+### 7.1 鲸鱼投资行为分析
 
-## 6. 常见问题与解决方案
+该场景主要关注鲸鱼的投资偏好和绩效：
 
-1. **排名计算问题**：
-   - 症状：排名不连续或有重复
-   - 解决方案：确保使用正确的ROW_NUMBER()函数和排序条件
+- **相关表**：`ads_top_profit_whales`, `ads_top_roi_whales`, `ads_whale_tracking_list`
+- **关键指标**：鲸鱼收益额、收益率、成功交易比例
+- **应用方式**：
+  - 分析最赚钱的Top10鲸鱼的投资策略
+  - 监控高ROI鲸鱼的最新交易动向
+  - 追踪有影响力鲸鱼的投资组合变化
 
-2. **Top榜单记录不足**：
-   - 症状：某些Top榜单记录数不足10条
-   - 解决方案：放宽筛选条件或减少榜单规模
+### 7.2 收藏集热度预测
 
-3. **数据更新延迟**：
-   - 症状：ADS层数据未及时反映最新状态
-   - 解决方案：优化调度策略，确保依赖的数据层及时完成
+该场景主要关注收藏集的鲸鱼资金流向，预测热度变化：
 
-## 7. ads_whale_transactions 数据流转处理流程
+- **相关表**：`ads_tracking_whale_collection_flow`, `ads_smart_whale_collection_flow`
+- **关键指标**：鲸鱼净流入/流出金额、聪明鲸鱼占比、地板价变化
+- **应用方式**：
+  - 发现鲸鱼大量买入的新兴收藏集
+  - 分析聪明鲸鱼近期关注的收藏集
+  - 预警鲸鱼大量卖出的收藏集
 
-该表存储鲸鱼相关的NFT交易详细数据，主要来源于DWD层的`dwd_whale_transaction_detail`表和DIM层的`dim_whale_address`表。
+### 7.3 交易异常监测
 
-处理流程：
-1. 从`dwd_whale_transaction_detail`获取鲸鱼相关交易数据
-2. 关联`dim_whale_address`获取鲸鱼类型和影响力评分
-3. 计算价格与地板价比率
-4. 筛选最近14天的交易数据
+该场景主要关注异常交易模式的检测：
 
-SQL处理逻辑示例：
-```sql
-INSERT INTO ads_whale_transactions
--- 创建临时视图，关联鲸鱼钱包数据
-WITH tmp_whale_info AS (
-  SELECT 
-    w.wallet_address,
-    w.whale_type,
-    w.whale_score
-  FROM 
-    dim.dim_whale_address w
-  WHERE 
-    w.status = 'ACTIVE'
-)
-SELECT 
-  CURRENT_DATE AS snapshot_date,
-  t.tx_hash,
-  t.contract_address,
-  t.token_id,
-  CAST(t.tx_timestamp AS TIMESTAMP) AS tx_timestamp,
-  t.from_address,
-  t.to_address,
-  COALESCE(from_whale.whale_type, 'NO_WHALE') AS from_whale_type,
-  COALESCE(to_whale.whale_type, 'NO_WHALE') AS to_whale_type,
-  CAST(COALESCE(from_whale.whale_score, 0) AS DECIMAL(10,2)) AS from_influence_score,
-  CAST(COALESCE(to_whale.whale_score, 0) AS DECIMAL(10,2)) AS to_influence_score,
-  t.collection_name,
-  CAST(t.trade_price_eth AS DECIMAL(30,10)) AS trade_price_eth,
-  CAST(t.trade_price_usd AS DECIMAL(30,10)) AS trade_price_usd,
-  CAST(t.floor_price_eth AS DECIMAL(30,10)) AS floor_price_eth,
-  CASE 
-    WHEN t.floor_price_eth > 0 THEN CAST(t.trade_price_eth / t.floor_price_eth AS DECIMAL(10,2))
-    ELSE CAST(NULL AS DECIMAL(10,2))
-  END AS price_to_floor_ratio,
-  t.platform AS marketplace,
-  'dwd_whale_transaction_detail,dim_whale_address' AS data_source,
-  CURRENT_TIMESTAMP AS etl_time
-FROM 
-  dwd.dwd_whale_transaction_detail t
-  LEFT JOIN tmp_whale_info from_whale ON t.from_address = from_whale.wallet_address
-  LEFT JOIN tmp_whale_info to_whale ON t.to_address = to_whale.wallet_address
-WHERE 
-  (t.from_is_whale = TRUE OR t.to_is_whale = TRUE OR 
-   from_whale.wallet_address IS NOT NULL OR to_whale.wallet_address IS NOT NULL)
-  AND t.tx_date BETWEEN CURRENT_DATE - INTERVAL '14' DAY AND CURRENT_DATE;
-```
+- **相关表**：`ads_whale_transactions`, `ads_dumb_whale_collection_flow`
+- **关键指标**：价格/地板价比率、大额交易、愚蠢鲸鱼交易占比
+- **应用方式**：
+  - 识别明显高于地板价的可疑交易
+  - 监测愚蠢鲸鱼集中买入的收藏集
+  - 分析大额交易的时间分布模式
 
-### 数据流转图
+## 8. 常见问题与解决方案
 
-```
-                            +------------------+
-                            |                  |
-                    +------>+ dim_whale_address+------+
-                    |       |                  |      |
-                    |       +------------------+      |
-                    |                                 |
-+------------------------+                      +------------------------+
-|                        |                      |                        |
-| dwd_whale_transaction_ |                      |                        |
-| detail                 +--------------------->+ ads_whale_transactions |
-|                        |                      |                        |
-+------------------------+                      +------------------------+
-```
+### 8.1 数据延迟问题
 
-### 执行周期
+**问题**：ADS层数据未能及时更新。
 
-- **更新频率**: 每日一次
-- **处理窗口**: 每次处理最近14天的交易数据
-- **依赖关系**: 依赖DWD层dwd_whale_transaction_detail表和DIM层dim_whale_address表的更新
+**解决方案**：
+1. 检查上游依赖的DWS层作业是否已完成
+2. 检查Flink作业执行日志，查看是否有卡顿或失败
+3. 适当调整资源配置，提高并行度
+4. 优化SQL查询，减少复杂计算
 
-### 数据应用场景
+### 8.2 数据不一致问题
 
-1. **鲸鱼交易模式分析**:
-   - 分析不同类型鲸鱼的交易平台选择
-   - 研究鲸鱼交易与地板价的关系
-   - 比较聪明鲸鱼和愚蠢鲸鱼的交易价格差异
+**问题**：ADS层数据与上游数据源不一致。
 
-2. **鲸鱼关系网络构建**:
-   - 分析鲸鱼之间的交易关系
-   - 识别高影响力鲸鱼的交易网络
+**解决方案**：
+1. 验证DWS到ADS的数据流转逻辑是否正确
+2. 查看中间计算过程，检查汇总逻辑
+3. 确认使用的时间范围筛选条件一致
+4. 修正类型转换和NULL值处理逻辑
 
-3. **市场指标监控**:
-   - 监控鲸鱼交易对地板价的影响
-   - 分析不同交易平台的鲸鱼活跃度
+### 8.3 新增表集成问题
 
-4. **交易异常检测**:
-   - 识别显著高于或低于地板价的异常交易
-   - 监控钱包地址之间的非常规交易模式
+**问题**：新增ADS表集成到现有架构困难。
 
-## 8. 运维建议
+**解决方案**：
+1. 遵循现有命名和设计规范
+2. 先在测试环境验证数据处理逻辑
+3. 更新相关文档和元数据信息
+4. 调整执行脚本，确保新表纳入现有调度流程
 
-1. 设置关键指标的阈值监控，及时发现异常数据
-2. 对历史榜单数据进行归档管理，保留一定时间范围的历史快照
-3. 建立数据质量报告机制，定期验证关键指标的准确性
-4. 定期与业务方沟通，确保ADS层的输出符合业务需求
-5. 为关键应用场景创建优化的视图或具体化视图，提高查询性能 
+## 9. 运维建议
+
+1. 定期清理历史快照数据，避免存储占用过大
+2. 监控ADS层作业执行时间，及时发现性能下降问题
+3. 建立数据质量监控体系，对关键指标设置合理阈值
+4. 优化查询频繁的表，考虑添加适当索引
+5. 定期与业务方沟通，确保ADS层输出满足业务需求
+
+## 10. 未来优化方向
+
+1. **实时数据服务**：构建基于Kafka的实时数据流，减少数据延迟
+2. **个性化推荐**：基于鲸鱼历史交易行为，构建推荐模型
+3. **智能告警**：实现基于机器学习的异常检测，提高预警准确率
+4. **指标统一管理**：建立指标元数据管理平台，统一口径与计算规则
+5. **交互式分析**：提供更灵活的即席查询能力，支持多维分析 

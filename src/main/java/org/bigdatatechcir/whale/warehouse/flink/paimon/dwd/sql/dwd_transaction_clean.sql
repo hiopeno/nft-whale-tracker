@@ -1,4 +1,4 @@
--- 鲸鱼交易明细数据 - DWD层重构
+-- 交易清洗明细数据 - DWD层重构
 
 -- 设置执行参数
 SET 'execution.checkpointing.interval' = '10s';
@@ -14,6 +14,7 @@ SET 'jobmanager.memory.process.size' = '4096m';
 SET 'taskmanager.memory.process.size' = '8192m';
 SET 'taskmanager.memory.jvm-metaspace.size' = '512m';
 SET 'taskmanager.memory.task.off-heap.size' = '1024m';
+
 /* 创建Paimon Catalog */
 CREATE CATALOG paimon_hive WITH (
     'type' = 'paimon',
@@ -28,19 +29,17 @@ USE CATALOG paimon_hive;
 CREATE DATABASE IF NOT EXISTS dwd;
 USE dwd;
 
--- 鲸鱼交易明细表 - 重构版
--- 该表专注于鲸鱼相关交易，移除了计算字段和管理字段
---DROP TABLE IF EXISTS dwd_whale_transaction_detail;
+-- 交易清洗明细表
+-- 该表包含所有清洗后的交易数据，不限于鲸鱼交易
+--DROP TABLE IF EXISTS dwd_transaction_clean;
 
-CREATE TABLE IF NOT EXISTS dwd_whale_transaction_detail (
+CREATE TABLE IF NOT EXISTS dwd_transaction_clean (
     tx_date DATE,                           -- 交易日期
     tx_id VARCHAR(255),                     -- 交易ID
     tx_hash VARCHAR(255),                   -- 交易哈希
     tx_timestamp TIMESTAMP,                 -- 交易时间戳
     from_address VARCHAR(255),              -- 卖方地址
     to_address VARCHAR(255),                -- 买方地址
-    from_is_whale BOOLEAN,                  -- 卖方是否鲸鱼
-    to_is_whale BOOLEAN,                    -- 买方是否鲸鱼
     contract_address VARCHAR(255),          -- NFT合约地址
     collection_name VARCHAR(255),           -- 收藏集名称
     token_id VARCHAR(255),                  -- NFT代币ID
@@ -51,9 +50,9 @@ CREATE TABLE IF NOT EXISTS dwd_whale_transaction_detail (
     platform VARCHAR(100),                  -- 交易平台
     is_in_working_set BOOLEAN,              -- 是否属于工作集
     etl_time TIMESTAMP,                     -- ETL处理时间
-    PRIMARY KEY (tx_date, tx_id, contract_address, token_id) NOT ENFORCED
+    PRIMARY KEY (tx_date, tx_id, contract_address) NOT ENFORCED
 ) WITH (
-    'bucket' = '8',
+    'bucket' = '10',
     'bucket-key' = 'contract_address',
     'file.format' = 'parquet',
     'merge-engine' = 'deduplicate',
@@ -63,42 +62,31 @@ CREATE TABLE IF NOT EXISTS dwd_whale_transaction_detail (
     'compaction.target-file-size' = '256MB'
 );
 
--- 插入数据：从交易清洗表关联鲸鱼信息
-INSERT INTO dwd_whale_transaction_detail
+-- 插入数据
+INSERT INTO dwd_transaction_clean
 SELECT
-    t.tx_date,
-    t.tx_id,
-    t.tx_hash,
-    t.tx_timestamp,
+    TO_DATE(FROM_UNIXTIME(CAST(t.tx_timestamp/1000 AS BIGINT))) AS tx_date,
+    t.nftscan_tx_id AS tx_id,
+    t.hash AS tx_hash,
+    CAST(FROM_UNIXTIME(CAST(t.tx_timestamp/1000 AS BIGINT)) AS TIMESTAMP(6)) AS tx_timestamp,
     t.from_address,
     t.to_address,
-    CASE WHEN vw.account_address IS NOT NULL OR bw.account_address IS NOT NULL THEN TRUE ELSE FALSE END AS from_is_whale,
-    CASE WHEN vw2.account_address IS NOT NULL OR bw2.account_address IS NOT NULL THEN TRUE ELSE FALSE END AS to_is_whale,
     t.contract_address,
-    t.collection_name,
+    t.contract_name AS collection_name,
     t.token_id,
-    t.trade_price_eth,
-    t.trade_price_usd,
-    t.trade_symbol,
-    t.event_type,
-    t.platform,
-    t.is_in_working_set,
-    CURRENT_TIMESTAMP AS etl_time
+    CAST(t.trade_price AS DECIMAL(30,10)) AS trade_price_eth,
+    CAST(t.trade_price * 2500.00 AS DECIMAL(30,10)) AS trade_price_usd, -- 使用固定汇率做示例，实际应从外部获取
+    CAST(t.trade_symbol AS VARCHAR(50)) AS trade_symbol,
+    CAST(t.event_type AS VARCHAR(50)) AS event_type,
+    CAST(t.exchange_name AS VARCHAR(100)) AS platform,
+    CASE WHEN cws.collection_address IS NOT NULL THEN TRUE ELSE FALSE END AS is_in_working_set,
+    CAST(CURRENT_TIMESTAMP AS TIMESTAMP(6)) AS etl_time
 FROM 
-    dwd_transaction_clean t
+    ods.ods_collection_transaction_inc t
 LEFT JOIN 
-    ods.ods_daily_top30_volume_wallets vw ON t.from_address = vw.account_address 
- --   AND CAST(t.tx_date AS VARCHAR) = vw.rank_date
-LEFT JOIN 
-    ods.ods_top100_balance_wallets bw ON t.from_address = bw.account_address 
---    AND CAST(t.tx_date AS VARCHAR) = bw.rank_date
-LEFT JOIN 
-    ods.ods_daily_top30_volume_wallets vw2 ON t.to_address = vw2.account_address 
---    AND CAST(t.tx_date AS VARCHAR) = vw2.rank_date
-LEFT JOIN 
-    ods.ods_top100_balance_wallets bw2 ON t.to_address = bw2.account_address 
---    AND CAST(t.tx_date AS VARCHAR) = bw2.rank_date
+    ods.ods_collection_working_set cws ON t.contract_address = cws.collection_address
 WHERE 
-    -- 至少有一方是鲸鱼
-    (vw.account_address IS NOT NULL OR bw.account_address IS NOT NULL OR 
-     vw2.account_address IS NOT NULL OR bw2.account_address IS NOT NULL); 
+    t.trade_price > 0 -- 过滤无效交易
+    AND t.tx_timestamp > 0 -- 确保时间戳为正数
+    AND t.tx_timestamp < 253402271999000 -- 排除过大的时间戳（2023年之后的8000年左右）
+; 

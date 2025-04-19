@@ -86,22 +86,26 @@ WITH daily_whale_txs AS (
         w.whale_type,
         CAST(COUNT(CASE WHEN tx.to_is_whale AND tx.to_address = w.wallet_address THEN 1 END) AS INT) AS whale_buy_count,
         CAST(COUNT(CASE WHEN tx.from_is_whale AND tx.from_address = w.wallet_address THEN 1 END) AS INT) AS whale_sell_count,
-        SUM(CASE WHEN tx.to_is_whale AND tx.to_address = w.wallet_address THEN tx.trade_price_eth ELSE 0 END) AS whale_buy_volume_eth,
-        SUM(CASE WHEN tx.from_is_whale AND tx.from_address = w.wallet_address THEN tx.trade_price_eth ELSE 0 END) AS whale_sell_volume_eth,
+        CAST(SUM(CASE WHEN tx.to_is_whale AND tx.to_address = w.wallet_address THEN tx.trade_price_eth ELSE 0 END) AS DECIMAL(30,10)) AS whale_buy_volume_eth,
+        CAST(SUM(CASE WHEN tx.from_is_whale AND tx.from_address = w.wallet_address THEN tx.trade_price_eth ELSE 0 END) AS DECIMAL(30,10)) AS whale_sell_volume_eth,
         CAST(COUNT(DISTINCT CASE WHEN tx.to_is_whale AND tx.to_address = w.wallet_address THEN tx.to_address END) AS INT) AS unique_whale_buyers,
         CAST(COUNT(DISTINCT CASE WHEN tx.from_is_whale AND tx.from_address = w.wallet_address THEN tx.from_address END) AS INT) AS unique_whale_sellers,
-        CASE 
-            WHEN COUNT(CASE WHEN tx.to_is_whale AND tx.to_address = w.wallet_address THEN 1 END) > 0 
-            THEN SUM(CASE WHEN tx.to_is_whale AND tx.to_address = w.wallet_address THEN tx.trade_price_eth ELSE 0 END) / 
-                 COUNT(CASE WHEN tx.to_is_whale AND tx.to_address = w.wallet_address THEN 1 END)
-            ELSE 0 
-        END AS whale_buy_avg_price_eth,
-        CASE 
-            WHEN COUNT(CASE WHEN tx.from_is_whale AND tx.from_address = w.wallet_address THEN 1 END) > 0 
-            THEN SUM(CASE WHEN tx.from_is_whale AND tx.from_address = w.wallet_address THEN tx.trade_price_eth ELSE 0 END) / 
-                 COUNT(CASE WHEN tx.from_is_whale AND tx.from_address = w.wallet_address THEN 1 END)
-            ELSE 0 
-        END AS whale_sell_avg_price_eth
+        CAST(
+            CASE 
+                WHEN COUNT(CASE WHEN tx.to_is_whale AND tx.to_address = w.wallet_address THEN 1 END) > 0 
+                THEN SUM(CASE WHEN tx.to_is_whale AND tx.to_address = w.wallet_address THEN tx.trade_price_eth ELSE 0 END) / 
+                     COUNT(CASE WHEN tx.to_is_whale AND tx.to_address = w.wallet_address THEN 1 END)
+                ELSE 0 
+            END
+        AS DECIMAL(30,10)) AS whale_buy_avg_price_eth,
+        CAST(
+            CASE 
+                WHEN COUNT(CASE WHEN tx.from_is_whale AND tx.from_address = w.wallet_address THEN 1 END) > 0 
+                THEN SUM(CASE WHEN tx.from_is_whale AND tx.from_address = w.wallet_address THEN tx.trade_price_eth ELSE 0 END) / 
+                     COUNT(CASE WHEN tx.from_is_whale AND tx.from_address = w.wallet_address THEN 1 END)
+                ELSE 0 
+            END
+        AS DECIMAL(30,10)) AS whale_sell_avg_price_eth
     FROM 
         dwd.dwd_whale_transaction_detail tx
     JOIN 
@@ -119,13 +123,15 @@ collection_stats AS (
         contract_address,
         collection_name,
         CAST(COUNT(*) AS INT) AS total_txs,
-        SUM(trade_price_eth) AS total_volume_eth,
-        CASE 
-            WHEN COUNT(*) > 0 
-            THEN SUM(trade_price_eth) / COUNT(*) 
-            ELSE 0 
-        END AS avg_price_eth,
-        MAX(floor_price_eth) AS floor_price_eth,
+        CAST(SUM(trade_price_eth) AS DECIMAL(30,10)) AS total_volume_eth,
+        CAST(
+            CASE 
+                WHEN COUNT(*) > 0 
+                THEN SUM(trade_price_eth) / COUNT(*) 
+                ELSE 0 
+            END
+        AS DECIMAL(30,10)) AS avg_price_eth,
+        CAST(0 AS DECIMAL(30,10)) AS floor_price_eth,
         MAX(is_in_working_set) AS is_in_working_set
     FROM 
         dwd.dwd_whale_transaction_detail
@@ -135,20 +141,22 @@ collection_stats AS (
         collection_name
 ),
 whale_ownership AS (
-    -- 计算鲸鱼持有比例
+    -- 计算鲸鱼持有比例（从DWS层的whale_ownership表中获取）
     SELECT 
-        ci.collection_address,
-        ci.whale_ownership_percentage
+        collection_address,
+        whale_ownership_percentage
     FROM 
-        dim.dim_collection_info ci
+        dws_collection_whale_ownership
+    WHERE 
+        stat_date = CURRENT_DATE
 ),
 historical_flows AS (
     -- 计算历史净流入
     SELECT 
         collection_address,
         whale_type,
-        SUM(CASE WHEN stat_date >= (CURRENT_DATE - INTERVAL '7' DAY) THEN net_flow_eth ELSE 0 END) AS accu_net_flow_7d,
-        SUM(CASE WHEN stat_date >= (CURRENT_DATE - INTERVAL '30' DAY) THEN net_flow_eth ELSE 0 END) AS accu_net_flow_30d
+        CAST(SUM(CASE WHEN stat_date >= (CURRENT_DATE - INTERVAL '7' DAY) THEN net_flow_eth ELSE 0 END) AS DECIMAL(30,10)) AS accu_net_flow_7d,
+        CAST(SUM(CASE WHEN stat_date >= (CURRENT_DATE - INTERVAL '30' DAY) THEN net_flow_eth ELSE 0 END) AS DECIMAL(30,10)) AS accu_net_flow_30d
     FROM 
         dws_collection_whale_flow
     GROUP BY 
@@ -175,28 +183,30 @@ SELECT
     dwt.whale_sell_count,
     dwt.whale_buy_volume_eth,
     dwt.whale_sell_volume_eth,
-    (dwt.whale_buy_volume_eth - dwt.whale_sell_volume_eth) AS net_flow_eth,
+    CAST((dwt.whale_buy_volume_eth - dwt.whale_sell_volume_eth) AS DECIMAL(30,10)) AS net_flow_eth,
     CASE WHEN (dwt.whale_buy_volume_eth - dwt.whale_sell_volume_eth) > 0 THEN TRUE ELSE FALSE END AS is_net_inflow,
     dwt.unique_whale_buyers,
     dwt.unique_whale_sellers,
-    CASE 
-        WHEN cs.total_volume_eth > 0 
-        THEN ((dwt.whale_buy_volume_eth + dwt.whale_sell_volume_eth) / cs.total_volume_eth) * 100 
-        ELSE 0 
-    END AS whale_trading_percentage,
+    CAST(
+        CASE 
+            WHEN cs.total_volume_eth > 0 
+            THEN ((dwt.whale_buy_volume_eth + dwt.whale_sell_volume_eth) / cs.total_volume_eth) * 100 
+            ELSE 0 
+        END
+    AS DECIMAL(10,2)) AS whale_trading_percentage,
     dwt.whale_buy_avg_price_eth,
     dwt.whale_sell_avg_price_eth,
     cs.avg_price_eth,
     cs.floor_price_eth,
     cs.total_volume_eth,
-    COALESCE(wo.whale_ownership_percentage, 0) AS whale_ownership_percentage,
-    COALESCE(hf.accu_net_flow_7d, 0) + (dwt.whale_buy_volume_eth - dwt.whale_sell_volume_eth) AS accu_net_flow_7d,
-    COALESCE(hf.accu_net_flow_30d, 0) + (dwt.whale_buy_volume_eth - dwt.whale_sell_volume_eth) AS accu_net_flow_30d,
-    CAST(COALESCE(r.rank_by_whale_volume, 0) AS INT) AS rank_by_whale_volume,
-    CAST(COALESCE(r.rank_by_net_flow, 0) AS INT) AS rank_by_net_flow,
+    CAST(COALESCE(wo.whale_ownership_percentage, 0) AS DECIMAL(10,2)) AS whale_ownership_percentage,
+    CAST(COALESCE(hf.accu_net_flow_7d, 0) + (dwt.whale_buy_volume_eth - dwt.whale_sell_volume_eth) AS DECIMAL(30,10)) AS accu_net_flow_7d,
+    CAST(COALESCE(hf.accu_net_flow_30d, 0) + (dwt.whale_buy_volume_eth - dwt.whale_sell_volume_eth) AS DECIMAL(30,10)) AS accu_net_flow_30d,
+    r.rank_by_whale_volume,
+    r.rank_by_net_flow,
     cs.is_in_working_set,
-    'dim_collection_info,dim_whale_address,dwd_whale_transaction_detail' AS data_source,
-    CURRENT_TIMESTAMP AS etl_time
+    CAST('dim_collection_info,dim_whale_address,dwd_whale_transaction_detail' AS VARCHAR(100)) AS data_source,
+    CAST(CURRENT_TIMESTAMP AS TIMESTAMP) AS etl_time
 FROM 
     daily_whale_txs dwt
 JOIN 

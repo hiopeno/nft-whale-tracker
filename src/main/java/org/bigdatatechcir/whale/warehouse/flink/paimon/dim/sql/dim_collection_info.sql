@@ -1,4 +1,4 @@
--- 收藏集维度表
+-- 收藏集维度表 - DIM层重构
 
 -- 设置执行参数
 SET 'execution.checkpointing.interval' = '10s';
@@ -35,39 +35,26 @@ USE CATALOG paimon_hive;
 CREATE DATABASE IF NOT EXISTS dim;
 USE dim;
 
--- 创建收藏集维度表
+-- 删除现有表以便重建
+DROP TABLE IF EXISTS dim_collection_info;
+
+-- 创建收藏集维度表（精简版）
 CREATE TABLE IF NOT EXISTS dim_collection_info (
-    collection_address VARCHAR(255),
-    collection_name VARCHAR(255),
-    symbol VARCHAR(50),
-    logo_url VARCHAR(1000),
-    banner_url VARCHAR(1000),
-    first_tracked_date DATE,
-    last_active_date DATE,
-    items_total INT,
-    owners_total INT,
-    is_verified BOOLEAN,
-    current_floor_price_eth DECIMAL(30,10),
-    all_time_volume_eth DECIMAL(30,10),
-    all_time_sales INT,
-    avg_price_7d DECIMAL(30,10),
-    avg_price_30d DECIMAL(30,10),
-    volume_7d DECIMAL(30,10),
-    volume_30d DECIMAL(30,10),
-    sales_7d INT,
-    sales_30d INT,
-    whale_ownership_percentage DECIMAL(10,2),
-    whale_volume_percentage DECIMAL(10,2),
-    smart_whale_interest_score DECIMAL(10,2),
-    is_in_working_set BOOLEAN,
-    working_set_join_date DATE,
-    working_set_days INT,
-    inactive_days INT,
-    status VARCHAR(20),
-    category VARCHAR(100),
-    total_whale_buys INT,
-    total_whale_sells INT,
-    etl_time TIMESTAMP,
+    collection_address VARCHAR(255),        -- 收藏集地址
+    collection_name VARCHAR(255),           -- 收藏集名称
+    symbol VARCHAR(50),                     -- 代币符号
+    logo_url VARCHAR(1000),                 -- Logo URL
+    banner_url VARCHAR(1000),               -- Banner URL
+    first_tracked_date DATE,                -- 首次追踪日期
+    last_active_date DATE,                  -- 最后活跃日期
+    items_total INT,                        -- NFT总数量
+    owners_total INT,                       -- 持有者总数
+    is_verified BOOLEAN,                    -- 是否已验证
+    is_in_working_set BOOLEAN,              -- 是否在工作集
+    working_set_join_date DATE,             -- 加入工作集日期
+    category VARCHAR(100),                  -- 类别
+    status VARCHAR(20),                     -- 状态
+    etl_time TIMESTAMP,                     -- ETL处理时间
     PRIMARY KEY (collection_address) NOT ENFORCED
 ) WITH (
     'bucket' = '8',
@@ -89,44 +76,25 @@ WITH new_collections AS (
         'NFT' AS symbol, -- 默认符号，实际项目中应从外部源获取
         COALESCE(cws.logo_url, '') AS logo_url, -- 从ods_collection_working_set获取logo_url
         'https://placeholder.com/banner.png' AS banner_url, -- 设置为默认banner URL
-        MIN(cd.collection_date) AS first_tracked_date,
-        MAX(cd.collection_date) AS last_active_date,
+        MIN(cd.tx_date) AS first_tracked_date,
+        MAX(cd.tx_date) AS last_active_date,
         0 AS items_total, -- 默认值，实际项目中应从外部源获取
         0 AS owners_total, -- 默认值，实际项目中应从外部源获取
         FALSE AS is_verified, -- 默认值，实际项目中应从外部源获取
-        AVG(cd.floor_price_eth) AS current_floor_price_eth,
-        SUM(cd.volume_eth) AS all_time_volume_eth,
-        SUM(cd.sales_count) AS all_time_sales,
-        AVG(CASE WHEN cd.collection_date >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN cd.avg_price_eth ELSE NULL END) AS avg_price_7d,
-        AVG(CASE WHEN cd.collection_date >= TIMESTAMPADD(DAY, -30, CURRENT_DATE) THEN cd.avg_price_eth ELSE NULL END) AS avg_price_30d,
-        SUM(CASE WHEN cd.collection_date >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN cd.volume_eth ELSE 0 END) AS volume_7d,
-        SUM(CASE WHEN cd.collection_date >= TIMESTAMPADD(DAY, -30, CURRENT_DATE) THEN cd.volume_eth ELSE 0 END) AS volume_30d,
-        SUM(CASE WHEN cd.collection_date >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN cd.sales_count ELSE 0 END) AS sales_7d,
-        SUM(CASE WHEN cd.collection_date >= TIMESTAMPADD(DAY, -30, CURRENT_DATE) THEN cd.sales_count ELSE 0 END) AS sales_30d,
-        AVG(cd.whale_percentage) AS whale_ownership_percentage,
-        (SUM(cd.whale_volume_eth) * 100.0) / NULLIF(SUM(cd.volume_eth), 0) AS whale_volume_percentage,
-        0 AS smart_whale_interest_score, -- 初始化为0，后续计算
         TRUE AS is_in_working_set,
-        MIN(cd.collection_date) AS working_set_join_date,
-        TIMESTAMPDIFF(DAY, MIN(cd.collection_date), CURRENT_DATE) AS working_set_days,
+        MIN(cd.tx_date) AS working_set_join_date,
+        'NFT' AS category, -- 默认类别
         CASE 
-            WHEN MAX(cd.collection_date) >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN 0
-            ELSE TIMESTAMPDIFF(DAY, MAX(cd.collection_date), CURRENT_DATE)
-        END AS inactive_days,
-        CASE 
-            WHEN MAX(cd.collection_date) >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN 'ACTIVE'
+            WHEN MAX(cd.tx_date) >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN 'ACTIVE'
             ELSE 'INACTIVE'
         END AS status,
-        'NFT' AS category, -- 默认类别
-        SUM(cd.whale_buyers) AS total_whale_buys,
-        SUM(cd.whale_sellers) AS total_whale_sells,
         CURRENT_TIMESTAMP AS etl_time
     FROM 
         ods.ods_collection_working_set cws
     LEFT JOIN 
-        dwd.dwd_collection_daily_stats cd ON cws.collection_address = cd.contract_address
+        dwd.dwd_transaction_clean cd ON cws.collection_address = cd.contract_address
     LEFT JOIN (
-        SELECT DISTINCT contract_address, collection_name FROM dwd.dwd_whale_transaction_detail
+        SELECT DISTINCT contract_address, collection_name FROM dwd.dwd_transaction_clean
     ) c ON cws.collection_address = c.contract_address
     WHERE 
         cws.status = 'active'
@@ -147,8 +115,8 @@ DELETE FROM dim_collection_info
 WHERE collection_address IN (
   SELECT DISTINCT dci.collection_address
   FROM dim_collection_info dci
-  JOIN dwd.dwd_collection_daily_stats cd ON dci.collection_address = cd.contract_address
-  WHERE cd.collection_date > dci.last_active_date
+  JOIN dwd.dwd_transaction_clean cd ON dci.collection_address = cd.contract_address
+  WHERE cd.tx_date > dci.last_active_date
 );
 
 -- 然后重新插入更新后的数据
@@ -158,74 +126,39 @@ SELECT
   dci.collection_name,
   dci.symbol,
   COALESCE(cws.logo_url, dci.logo_url) AS logo_url, -- 优先使用最新的logo_url
-  'https://placeholder.com/banner.png' AS banner_url, -- 设置为默认banner URL
+  dci.banner_url,
   dci.first_tracked_date,
-  MAX(cd.collection_date) AS last_active_date,
+  MAX(cd.tx_date) AS last_active_date,
   dci.items_total,
   dci.owners_total,
   dci.is_verified,
-  AVG(cd.floor_price_eth) AS current_floor_price_eth,
-  dci.all_time_volume_eth + SUM(cd.volume_eth) AS all_time_volume_eth,
-  dci.all_time_sales + SUM(cd.sales_count) AS all_time_sales,
-  AVG(CASE WHEN cd.collection_date >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN cd.avg_price_eth ELSE NULL END) AS avg_price_7d,
-  AVG(CASE WHEN cd.collection_date >= TIMESTAMPADD(DAY, -30, CURRENT_DATE) THEN cd.avg_price_eth ELSE NULL END) AS avg_price_30d,
-  SUM(CASE WHEN cd.collection_date >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN cd.volume_eth ELSE 0 END) AS volume_7d,
-  SUM(CASE WHEN cd.collection_date >= TIMESTAMPADD(DAY, -30, CURRENT_DATE) THEN cd.volume_eth ELSE 0 END) AS volume_30d,
-  SUM(CASE WHEN cd.collection_date >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN cd.sales_count ELSE 0 END) AS sales_7d,
-  SUM(CASE WHEN cd.collection_date >= TIMESTAMPADD(DAY, -30, CURRENT_DATE) THEN cd.sales_count ELSE 0 END) AS sales_30d,
-  
-  -- 简化鲸鱼持有百分比计算
-  AVG(cd.whale_percentage) AS whale_ownership_percentage,
-  (SUM(cd.whale_volume_eth) * 100.0) / NULLIF(SUM(cd.volume_eth), 0) AS whale_volume_percentage,
-  
-  -- 对于复杂的鲸鱼兴趣评分，使用默认值
-  dci.smart_whale_interest_score,
-  
-  MAX(cd.is_in_working_set) AS is_in_working_set,
-  CASE WHEN MAX(cd.is_in_working_set) = TRUE AND dci.is_in_working_set = FALSE 
-       THEN CURRENT_DATE ELSE dci.working_set_join_date END AS working_set_join_date,
-  CASE WHEN MAX(cd.is_in_working_set) = TRUE 
-       THEN TIMESTAMPDIFF(DAY, dci.working_set_join_date, CURRENT_DATE) 
-       ELSE dci.working_set_days END AS working_set_days,
-  
-  CASE WHEN MAX(cd.collection_date) >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN 0
-       ELSE TIMESTAMPDIFF(DAY, MAX(cd.collection_date), CURRENT_DATE) END AS inactive_days,
-  
-  CASE WHEN MAX(cd.collection_date) >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN 'ACTIVE'
-       WHEN TIMESTAMPDIFF(DAY, MAX(cd.collection_date), CURRENT_DATE) > 7 THEN 'INACTIVE'
-       ELSE dci.status END AS status,
-  
+  dci.is_in_working_set,
+  dci.working_set_join_date,
   dci.category,
-  dci.total_whale_buys + SUM(cd.whale_buyers) AS total_whale_buys,
-  dci.total_whale_sells + SUM(cd.whale_sellers) AS total_whale_sells,
+  CASE WHEN MAX(cd.tx_date) >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN 'ACTIVE'
+       ELSE 'INACTIVE' END AS status,
   CURRENT_TIMESTAMP AS etl_time
 FROM 
   dim_collection_info dci
 JOIN 
-  dwd.dwd_collection_daily_stats cd 
+  dwd.dwd_transaction_clean cd 
   ON dci.collection_address = cd.contract_address
 LEFT JOIN
   ods.ods_collection_working_set cws
   ON dci.collection_address = cws.collection_address
 WHERE 
-  cd.collection_date > dci.last_active_date
+  cd.tx_date > dci.last_active_date
 GROUP BY
   dci.collection_address,
   dci.collection_name,
   dci.symbol,
   cws.logo_url,
   dci.logo_url,
+  dci.banner_url,
   dci.first_tracked_date,
   dci.items_total,
   dci.owners_total,
   dci.is_verified,
-  dci.all_time_volume_eth,
-  dci.all_time_sales,
-  dci.smart_whale_interest_score,
   dci.is_in_working_set,
   dci.working_set_join_date,
-  dci.working_set_days,
-  dci.status,
-  dci.category,
-  dci.total_whale_buys,
-  dci.total_whale_sells; 
+  dci.category; 

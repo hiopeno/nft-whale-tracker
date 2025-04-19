@@ -67,25 +67,39 @@ CREATE TABLE IF NOT EXISTS ads_top_profit_whales (
 
 -- 计算并更新收益额Top10鲸鱼钱包
 INSERT INTO ads_top_profit_whales
-WITH profit_ranks AS (
+WITH whale_profit_data AS (
+    SELECT 
+        wallet_address,
+        SUM(daily_profit_eth) AS total_profit_eth,
+        SUM(daily_profit_eth) * 2500.00 AS total_profit_usd,  -- 示例ETH->USD汇率
+        COUNT(*) AS total_tx_count,
+        MAX(influence_score) AS influence_score
+    FROM 
+        dws.dws_whale_daily_stats
+    GROUP BY 
+        wallet_address
+),
+profit_ranks AS (
     SELECT 
         CURRENT_DATE AS snapshot_date,
-        dwa.wallet_address,
+        wp.wallet_address,
         dwa.whale_type,
-        dwa.total_profit_eth,
-        dwa.total_profit_usd,
-        CAST(dwa.total_tx_count AS INT) AS total_tx_count,
+        wp.total_profit_eth,
+        wp.total_profit_usd,
+        CAST(wp.total_tx_count AS INT) AS total_tx_count,
         dwa.first_track_date,
         TIMESTAMPDIFF(DAY, dwa.first_track_date, CURRENT_DATE) AS tracking_days,
-        dwa.whale_score AS influence_score,
-        ROW_NUMBER() OVER (ORDER BY dwa.total_profit_eth DESC) AS rank_num
+        wp.influence_score,
+        CAST(ROW_NUMBER() OVER (ORDER BY wp.total_profit_eth DESC) AS INT) AS rank_num
     FROM 
-        dim.dim_whale_address dwa
+        whale_profit_data wp
+    JOIN 
+        dim.dim_whale_address dwa ON wp.wallet_address = dwa.wallet_address
     WHERE 
         dwa.is_whale = TRUE
         AND dwa.status = 'ACTIVE'
 ),
-whale_profit_stats AS (
+recent_profit_stats AS (
     -- 计算近期利润
     SELECT 
         wallet_address,
@@ -127,7 +141,7 @@ best_collections AS (
 SELECT 
     r.snapshot_date,
     r.wallet_address,
-    CAST(r.rank_num AS INT) AS rank_num,
+    r.rank_num,
     CASE 
         WHEN r.whale_type = 'SMART' THEN 'Smart Whale'
         WHEN r.whale_type = 'DUMB' THEN 'Dumb Whale'
@@ -135,20 +149,20 @@ SELECT
     END AS wallet_tag,
     r.total_profit_eth,
     r.total_profit_usd,
-    COALESCE(ps.profit_7d_eth, 0) AS profit_7d_eth,
-    COALESCE(ps.profit_30d_eth, 0) AS profit_30d_eth,
+    COALESCE(ps.profit_7d_eth, CAST(0 AS DECIMAL(30,10))) AS profit_7d_eth,
+    COALESCE(ps.profit_30d_eth, CAST(0 AS DECIMAL(30,10))) AS profit_30d_eth,
     COALESCE(bc.best_collection, 'Unknown') AS best_collection,
-    COALESCE(bc.best_collection_profit_eth, 0) AS best_collection_profit_eth,
+    COALESCE(bc.best_collection_profit_eth, CAST(0 AS DECIMAL(30,10))) AS best_collection_profit_eth,
     r.total_tx_count,
     r.first_track_date,
     CAST(r.tracking_days AS INT) AS tracking_days,
-    r.influence_score,
+    CAST(r.influence_score AS DECIMAL(10,2)) AS influence_score,
     'dws_whale_daily_stats,dim_whale_address' AS data_source,
     CURRENT_TIMESTAMP AS etl_time
 FROM 
     profit_ranks r
 LEFT JOIN 
-    whale_profit_stats ps ON r.wallet_address = ps.wallet_address
+    recent_profit_stats ps ON r.wallet_address = ps.wallet_address
 LEFT JOIN 
     best_collections bc ON r.wallet_address = bc.wallet_address
 WHERE 

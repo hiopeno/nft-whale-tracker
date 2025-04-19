@@ -6,12 +6,78 @@
 
 ## 表目录
 
-1. [dws_whale_daily_stats](#1-dws_whale_daily_stats)
-2. [dws_collection_whale_flow](#2-dws_collection_whale_flow)
+1. [dws_collection_daily_stats](#1-dws_collection_daily_stats)
+2. [dws_wallet_daily_stats](#2-dws_wallet_daily_stats)
+3. [dws_whale_daily_stats](#3-dws_whale_daily_stats)
+4. [dws_collection_whale_flow](#4-dws_collection_whale_flow)
+5. [dws_collection_whale_ownership](#5-dws_collection_whale_ownership)
 
-## 1. dws_whale_daily_stats
+## 1. dws_collection_daily_stats
 
-**表说明**: 存储鲸鱼钱包的每日交易汇总数据
+**表说明**: 存储收藏集的每日交易统计数据（从DWD层迁移并增强）
+
+**主键**: collection_date, contract_address
+
+| 字段名 | 数据类型 | 说明 | 示例值 |
+|-------|---------|------|-------|
+| collection_date | DATE | 统计日期 | 2025-04-10 |
+| contract_address | VARCHAR(255) | NFT合约地址 | 0x495f947276749ce646f68ac8c248420045cb7b5e |
+| collection_name | VARCHAR(255) | 收藏集名称 | The Bears |
+| sales_count | INT | 当日销售数量 | 150 |
+| volume_eth | DECIMAL(30,10) | 当日交易额(ETH) | 25.75 |
+| volume_usd | DECIMAL(30,10) | 当日交易额(USD) | 64375.0 |
+| avg_price_eth | DECIMAL(30,10) | 当日平均价格(ETH) | 0.172 |
+| min_price_eth | DECIMAL(30,10) | 当日最低价格(ETH) | 0.1 |
+| max_price_eth | DECIMAL(30,10) | 当日最高价格(ETH) | 0.5 |
+| floor_price_eth | DECIMAL(30,10) | 当日地板价(ETH) | 0.15 |
+| unique_buyers | INT | 唯一买家数量 | 75 |
+| unique_sellers | INT | 唯一卖家数量 | 60 |
+| whale_buyers | INT | 鲸鱼买家数量 | 12 |
+| whale_sellers | INT | 鲸鱼卖家数量 | 8 |
+| whale_volume_eth | DECIMAL(30,10) | 鲸鱼交易额(ETH) | 15.3 |
+| whale_percentage | DECIMAL(10,2) | 鲸鱼交易额占比 | 59.4 |
+| sales_change_1d | DECIMAL(10,2) | 销售数量1日环比 | 12.5 |
+| volume_change_1d | DECIMAL(10,2) | 交易额1日环比 | 8.3 |
+| price_change_1d | DECIMAL(10,2) | 均价1日环比 | -2.8 |
+| is_in_working_set | BOOLEAN | 是否属于工作集 | TRUE |
+| rank_by_volume | INT | 按交易额排名 | 5 |
+| rank_by_sales | INT | 按销售量排名 | 7 |
+| is_top30_volume | BOOLEAN | 是否交易额Top30 | TRUE |
+| is_top30_sales | BOOLEAN | 是否销售量Top30 | FALSE |
+| data_source | VARCHAR(100) | 数据来源 | dwd_transaction_clean,dwd_whale_transaction_detail |
+| etl_time | TIMESTAMP | ETL处理时间 | 2025-04-11 03:00:00 |
+
+## 2. dws_wallet_daily_stats
+
+**表说明**: 存储所有钱包的每日交易统计数据（从DWD层迁移并增强）
+
+**主键**: wallet_date, wallet_address
+
+| 字段名 | 数据类型 | 说明 | 示例值 |
+|-------|---------|------|-------|
+| wallet_date | DATE | 统计日期 | 2025-04-10 |
+| wallet_address | VARCHAR(255) | 钱包地址 | 0x29469395eaf6f95920e59f858042f0e28d98a20b |
+| total_tx_count | INT | 交易总数 | 23 |
+| buy_count | INT | 买入次数 | 15 |
+| sell_count | INT | 卖出次数 | 8 |
+| buy_volume_eth | DECIMAL(30,10) | 买入量(ETH) | 5.75 |
+| sell_volume_eth | DECIMAL(30,10) | 卖出量(ETH) | 4.25 |
+| profit_eth | DECIMAL(30,10) | 利润(ETH) | 1.5 |
+| profit_usd | DECIMAL(30,10) | 利润(USD) | 3750.0 |
+| roi_percentage | DECIMAL(10,2) | 投资回报率 | 26.1 |
+| collections_traded | INT | 交易的收藏集数量 | 4 |
+| is_active | BOOLEAN | 是否活跃 | TRUE |
+| is_whale_candidate | BOOLEAN | 是否鲸鱼候选 | TRUE |
+| is_top30_volume | BOOLEAN | 是否交易额Top30 | TRUE |
+| is_top100_balance | BOOLEAN | 是否余额Top100 | FALSE |
+| balance_eth | DECIMAL(30,10) | 持仓余额(ETH) | 125.5 |
+| balance_usd | DECIMAL(30,10) | 持仓余额(USD) | 313750.0 |
+| data_source | VARCHAR(100) | 数据来源 | dwd_transaction_clean |
+| etl_time | TIMESTAMP | ETL处理时间 | 2025-04-11 03:15:00 |
+
+## 3. dws_whale_daily_stats
+
+**表说明**: 存储鲸鱼钱包的每日交易汇总数据（优化字段和逻辑）
 
 **主键**: stat_date, wallet_address
 
@@ -44,12 +110,12 @@
 | rank_by_volume | INT | 按交易额排名 | 8 |
 | rank_by_profit | INT | 按利润排名 | 15 |
 | rank_by_roi | INT | 按ROI排名 | 6 |
-| data_source | VARCHAR(100) | 数据来源 | dim_whale_address,dwd_wallet_daily_stats |
-| etl_time | TIMESTAMP | ETL处理时间 | 2025-04-11 03:00:00 |
+| data_source | VARCHAR(100) | 数据来源 | dim_whale_address,dws_wallet_daily_stats |
+| etl_time | TIMESTAMP | ETL处理时间 | 2025-04-11 03:30:00 |
 
-## 2. dws_collection_whale_flow
+## 4. dws_collection_whale_flow
 
-**表说明**: 存储收藏集的鲸鱼资金流向数据
+**表说明**: 存储收藏集的鲸鱼资金流向数据（优化字段和逻辑）
 
 **主键**: stat_date, collection_address, whale_type
 
@@ -79,8 +145,35 @@
 | rank_by_whale_volume | INT | 按鲸鱼交易额排名 | 4 |
 | rank_by_net_flow | INT | 按净流入排名 | 2 |
 | is_in_working_set | BOOLEAN | 是否在工作集中 | TRUE |
-| data_source | VARCHAR(100) | 数据来源 | dim_collection_info,dwd_whale_transaction_detail |
-| etl_time | TIMESTAMP | ETL处理时间 | 2025-04-11 03:30:00 |
+| data_source | VARCHAR(100) | 数据来源 | dim_whale_address,dwd_whale_transaction_detail,dws_collection_whale_ownership |
+| etl_time | TIMESTAMP | ETL处理时间 | 2025-04-11 03:45:00 |
+
+## 5. dws_collection_whale_ownership
+
+**表说明**: 存储收藏集的鲸鱼持有统计数据（新增，聚合DIM层统计功能）
+
+**主键**: stat_date, collection_address
+
+| 字段名 | 数据类型 | 说明 | 示例值 |
+|-------|---------|------|-------|
+| stat_date | DATE | 统计日期 | 2025-04-10 |
+| collection_address | VARCHAR(255) | 收藏集地址 | 0x495f947276749ce646f68ac8c248420045cb7b5e |
+| collection_name | VARCHAR(255) | 收藏集名称 | The Bears |
+| total_nfts | INT | NFT总数量 | 10000 |
+| total_owners | INT | 持有者总数 | 5000 |
+| whale_owners | INT | 鲸鱼持有者数 | 150 |
+| whale_owned_nfts | INT | 鲸鱼持有的NFT数量 | 3500 |
+| whale_ownership_percentage | DECIMAL(10,2) | 鲸鱼持有比例 | 35.0 |
+| smart_whale_ownership_percentage | DECIMAL(10,2) | 聪明鲸鱼持有比例 | 20.5 |
+| dumb_whale_ownership_percentage | DECIMAL(10,2) | 愚蠢鲸鱼持有比例 | 14.5 |
+| total_value_eth | DECIMAL(30,10) | 持有总价值(ETH) | 1500.0 |
+| whale_owned_value_eth | DECIMAL(30,10) | 鲸鱼持有价值(ETH) | 525.0 |
+| ownership_change_1d | DECIMAL(10,2) | 持有比例1日变化 | 1.5 |
+| ownership_change_7d | DECIMAL(10,2) | 持有比例7日变化 | 5.3 |
+| rank_by_whale_ownership | INT | 按鲸鱼持有比例排名 | 3 |
+| is_in_working_set | BOOLEAN | 是否属于工作集 | TRUE |
+| data_source | VARCHAR(100) | 数据来源 | dwd_transaction_clean,dim_whale_address |
+| etl_time | TIMESTAMP | ETL处理时间 | 2025-04-11 03:40:00 |
 
 ## 数据类型说明
 
@@ -109,9 +202,28 @@ WITH (
     'bucket-key' = 'field',              -- 分桶键（可选）
     'file.format' = 'parquet',           -- 文件格式
     'merge-engine' = 'deduplicate',      -- 合并引擎
-    'changelog-producer' = 'input',      -- 变更日志生产模式
+    'changelog-producer' = 'input/lookup', -- 变更日志生产模式
     'compaction.min.file-num' = 'n',     -- 最小文件数量进行压缩
     'compaction.max.file-num' = 'n',     -- 最大文件数量进行压缩
     'compaction.target-file-size' = 'nMB' -- 目标文件大小
 )
-``` 
+```
+
+## 字段命名规范
+
+1. **时间维度**: 通常以表的主题命名，例如`collection_date`、`wallet_date`、`stat_date`
+2. **实体标识符**: 通常使用`{entity}_address`格式，例如`wallet_address`、`collection_address`
+3. **计数指标**: 使用`{entity}_count`或`{metric}_count`格式，例如`sales_count`、`buy_count`
+4. **货币指标**: 使用`{metric}_{currency}`格式，例如`volume_eth`、`profit_usd`
+5. **比例指标**: 使用`{metric}_percentage`或`{metric}_rate`格式，例如`roi_percentage`、`success_rate_7d`
+6. **累计指标**: 使用`accu_{metric}`格式，例如`accu_profit_eth`、`accu_net_flow_7d`
+7. **排名指标**: 使用`rank_by_{metric}`格式，例如`rank_by_volume`、`rank_by_profit`
+8. **变化指标**: 使用`{metric}_change_{period}`格式，例如`price_change_1d`、`ownership_change_7d`
+
+## 数据依赖关系
+
+1. **dws_collection_daily_stats**: 依赖`dwd_transaction_clean`和`dwd_whale_transaction_detail`
+2. **dws_wallet_daily_stats**: 依赖`dwd_transaction_clean`
+3. **dws_whale_daily_stats**: 依赖`dws_wallet_daily_stats`和`dim_whale_address`
+4. **dws_collection_whale_ownership**: 依赖`dwd_transaction_clean`和`dim_whale_address`
+5. **dws_collection_whale_flow**: 依赖`dwd_whale_transaction_detail`、`dim_whale_address`和`dws_collection_whale_ownership`
