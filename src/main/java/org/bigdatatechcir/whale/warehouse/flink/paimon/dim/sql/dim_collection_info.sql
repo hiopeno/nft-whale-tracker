@@ -35,8 +35,6 @@ USE CATALOG paimon_hive;
 CREATE DATABASE IF NOT EXISTS dim;
 USE dim;
 
--- 删除现有表以便重建
-DROP TABLE IF EXISTS dim_collection_info;
 
 -- 创建收藏集维度表（精简版）
 CREATE TABLE IF NOT EXISTS dim_collection_info (

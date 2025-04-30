@@ -5,7 +5,7 @@
 // API基础URL，根据不同环境配置不同的URL
 const API_BASE_URL = process.env.NODE_ENV === 'production'
   ? '/api' // 生产环境下使用相对路径，由nginx代理转发
-  : 'http://localhost:8080'; // 开发环境直接连接后端
+  : 'http://localhost:8886/api'; // 开发环境直接连接后端API服务
 
 // WebSocket基础URL
 const WS_BASE_URL = process.env.NODE_ENV === 'production'
@@ -19,24 +19,33 @@ const API_VERSION = '/api';
 const API_ENDPOINTS = {
   // 鲸鱼追踪相关
   whaleTracking: {
-    stats: `${API_VERSION}/whale-tracking/stats`,
-    transactions: `${API_VERSION}/whale-tracking/transactions`,
-    collectionFlow: `${API_VERSION}/whale-tracking/collection-flow`,
-    volumeAnalysis: `${API_VERSION}/whale-tracking/volume-analysis`,
-    profitAnalysis: `${API_VERSION}/whale-tracking/profit-analysis`,
-    wallet: (address: string) => `${API_VERSION}/whale-tracking/wallet/${address}`,
+    stats: `/whale-tracking/stats`,
+    transactions: `/whale-tracking/transactions`,
+    collectionFlow: `/whale-tracking/collection-flow`,
+    volumeAnalysis: `/whale-tracking/volume-analysis`,
+    profitAnalysis: `/whale-tracking/profit-analysis`,
+    wallet: (address: string) => `/whale-tracking/wallet/${address}`,
   },
   
   // WebSocket相关
   websocket: {
-    status: `${API_VERSION}/websocket/status`,
-    sendNotification: `${API_VERSION}/websocket/send-notification`,
-    sendTransactionNotification: `${API_VERSION}/websocket/send-transaction-notification`,
-    sendDealOpportunity: `${API_VERSION}/websocket/send-deal-opportunity`,
-    setTransactionNotificationEnabled: `${API_VERSION}/websocket/transaction-notification/enabled`,
-    setDealOpportunityEnabled: `${API_VERSION}/websocket/deal-opportunity/enabled`,
-    scanMarketplace: `${API_VERSION}/websocket/scan-marketplace`,
+    status: `/websocket/status`,
+    sendNotification: `/websocket/send-notification`,
+    sendTransactionNotification: `/websocket/send-transaction-notification`,
+    sendDealOpportunity: `/websocket/send-deal-opportunity`,
+    setTransactionNotificationEnabled: `/websocket/transaction-notification/enabled`,
+    setDealOpportunityEnabled: `/websocket/deal-opportunity/enabled`,
+    scanMarketplace: `/websocket/scan-marketplace`,
   },
+  
+  // 数据湖通用查询
+  dataLake: {
+    databases: `/data/databases`,
+    tables: (database: string) => `/data/tables/${database}`,
+    schema: (database: string, table: string) => `/data/schema/${database}/${table}`,
+    query: (database: string, table: string, limit: number = 100) => 
+      `/data/query/${database}/${table}?limit=${limit}`,
+  }
 };
 
 // WebSocket主题

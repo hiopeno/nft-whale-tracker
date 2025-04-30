@@ -18,10 +18,10 @@ USE CATALOG paimon_hive;
 SHOW DATABASES;
 
 -- 使用ODS数据库
-USE dwd;
+USE ods;
 
 -- 查看所有表
 SHOW TABLES;
 
 -- 查询鲸鱼钱包数据(取10条)
-SELECT wallet_date FROM dwd_wallet_daily_stats LIMIT 1; 
+SELECT collection_id FROM ods_collection_working_set LIMIT 1; 
