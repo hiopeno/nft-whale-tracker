@@ -86,7 +86,7 @@ WITH whale_stats AS (
         END AS roi_percentage,
         MAX(influence_score) AS influence_score,
         COUNT(*) AS total_tx_count,
-        MAX(success_rate_30d) AS success_rate,
+        MAX(success_rate_7d) AS success_rate,
         MAX(daily_collections_traded) AS favorite_collections_count
     FROM 
         dws.dws_whale_daily_stats

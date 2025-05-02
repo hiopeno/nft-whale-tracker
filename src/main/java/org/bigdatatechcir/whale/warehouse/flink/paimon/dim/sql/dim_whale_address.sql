@@ -122,11 +122,59 @@ SELECT
     dw.first_track_date,
     GREATEST(dw.last_active_date, COALESCE(MAX(wtd.tx_date), dw.last_active_date)) AS last_active_date,
     dw.is_whale,
-    CASE WHEN dw.whale_type = 'TRACKING' AND TIMESTAMPDIFF(DAY, dw.first_track_date, CURRENT_DATE) >= 30 THEN
-        -- 追踪30天后确定鲸鱼类型，实际项目中应基于从DWS层获取的成功率指标
+    CASE 
+        -- 对新鲸鱼：追踪7天后进行评估
+        -- 对已分类鲸鱼：每周周日重新评估
+        WHEN (dw.whale_type = 'TRACKING' AND TIMESTAMPDIFF(DAY, dw.first_track_date, CURRENT_DATE) >= 7) 
+             OR (DAYOFWEEK(CURRENT_DATE) = 1) -- 周日，1代表周日，2代表周一，以此类推
+        THEN
+        -- 基于7天成功率和ROI指标综合判断鲸鱼类型
         CASE 
-            -- 这里使用简单规则示例，实际应基于更复杂的业务逻辑
-            WHEN EXISTS (SELECT 1 FROM ods.ods_daily_top30_volume_wallets WHERE account_address = dw.wallet_address) THEN 'SMART'
+            -- 聪明鲸鱼：成功率≥75% 且 7天ROI为正
+            WHEN EXISTS (
+                SELECT 1 
+                FROM dws.dws_whale_daily_stats stats
+                JOIN (
+                    -- 获取7天ROI
+                    SELECT 
+                        wallet_address,
+                        CASE 
+                            WHEN SUM(CASE WHEN stat_date >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN daily_profit_eth ELSE 0 END) > 0 
+                            THEN AVG(CASE WHEN stat_date >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN daily_roi_percentage ELSE NULL END)
+                            ELSE 0
+                        END AS roi_7d_percentage
+                    FROM 
+                        dws.dws_whale_daily_stats
+                    GROUP BY 
+                        wallet_address
+                ) roi ON stats.wallet_address = roi.wallet_address
+                WHERE stats.wallet_address = dw.wallet_address
+                AND stats.success_rate_7d >= 75
+                AND roi.roi_7d_percentage > 0  -- ROI为正
+            ) THEN 'SMART'
+            -- 愚蠢鲸鱼：成功率<25% 且 7天ROI为负
+            WHEN EXISTS (
+                SELECT 1 
+                FROM dws.dws_whale_daily_stats stats
+                JOIN (
+                    -- 获取7天ROI
+                    SELECT 
+                        wallet_address,
+                        CASE 
+                            WHEN SUM(CASE WHEN stat_date >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN daily_profit_eth ELSE 0 END) > 0 
+                            THEN AVG(CASE WHEN stat_date >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN daily_roi_percentage ELSE NULL END)
+                            ELSE 0
+                        END AS roi_7d_percentage
+                    FROM 
+                        dws.dws_whale_daily_stats
+                    GROUP BY 
+                        wallet_address
+                ) roi ON stats.wallet_address = roi.wallet_address
+                WHERE stats.wallet_address = dw.wallet_address
+                AND stats.success_rate_7d < 25
+                AND roi.roi_7d_percentage < 0  -- ROI为负
+            ) THEN 'DUMB'
+            -- 其他情况继续追踪
             ELSE 'TRACKING'
         END
     ELSE dw.whale_type END AS whale_type,

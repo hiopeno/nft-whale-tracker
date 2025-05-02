@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS ads_top_profit_whales (
 -- 计算并更新收益额Top10鲸鱼钱包
 INSERT INTO ads_top_profit_whales
 WITH whale_profit_data AS (
+    -- 从DWS层获取已精确计算的利润数据
     SELECT 
         wallet_address,
         SUM(daily_profit_eth) AS total_profit_eth,
@@ -100,43 +101,72 @@ profit_ranks AS (
         AND dwa.status = 'ACTIVE'
 ),
 recent_profit_stats AS (
-    -- 计算近期利润
+    -- 计算近期利润 - 使用精确计算的利润
     SELECT 
         wallet_address,
-        SUM(CASE WHEN stat_date >= DATE_FORMAT(CAST(TIMESTAMPADD(DAY, -7, CURRENT_DATE) AS TIMESTAMP), 'yyyy-MM-dd') THEN daily_profit_eth ELSE 0 END) AS profit_7d_eth,
-        SUM(CASE WHEN stat_date >= DATE_FORMAT(CAST(TIMESTAMPADD(DAY, -30, CURRENT_DATE) AS TIMESTAMP), 'yyyy-MM-dd') THEN daily_profit_eth ELSE 0 END) AS profit_30d_eth
+        SUM(CASE WHEN stat_date >= DATE_FORMAT(CAST(TIMESTAMPADD(DAY, -7, CURRENT_DATE) AS TIMESTAMP), 'yyyy-MM-dd') 
+                 THEN daily_profit_eth ELSE 0 END) AS profit_7d_eth,
+        SUM(CASE WHEN stat_date >= DATE_FORMAT(CAST(TIMESTAMPADD(DAY, -30, CURRENT_DATE) AS TIMESTAMP), 'yyyy-MM-dd') 
+                 THEN daily_profit_eth ELSE 0 END) AS profit_30d_eth
     FROM 
         dws.dws_whale_daily_stats
     GROUP BY 
         wallet_address
 ),
+-- 计算每个收藏集的利润 - 使用NFT买卖配对计算
+nft_profits_by_collection AS (
+    -- 通过配对买卖交易计算每个收藏集的利润
+    SELECT 
+        sell.from_address AS wallet_address,
+        sell.contract_address,
+        sell.collection_name,
+        SUM(sell.trade_price_eth - buy.trade_price_eth) AS profit_eth
+    FROM 
+        dwd.dwd_whale_transaction_detail sell
+    JOIN (
+        -- 找到每个NFT的最后一次买入记录
+        SELECT 
+            t.to_address,
+            t.contract_address,
+            t.token_id,
+            t.trade_price_eth,
+            ROW_NUMBER() OVER (
+                PARTITION BY t.to_address, t.contract_address, t.token_id 
+                ORDER BY t.tx_date DESC
+            ) AS rn
+        FROM 
+            dwd.dwd_whale_transaction_detail t
+    ) buy ON sell.from_address = buy.to_address
+        AND sell.contract_address = buy.contract_address
+        AND sell.token_id = buy.token_id
+        AND buy.rn = 1  -- 确保只取最后一次买入
+    WHERE 
+        sell.from_is_whale = TRUE
+    GROUP BY 
+        sell.from_address,
+        sell.contract_address,
+        sell.collection_name
+),
 best_collections AS (
-    -- 识别最佳收藏集
+    -- 识别最佳收藏集（利润最高的）
     SELECT 
         wallet_address,
         collection_name AS best_collection,
-        MAX(collection_profit) AS best_collection_profit_eth
-    FROM (
-        SELECT 
-            w.wallet_address,
-            tx.collection_name,
-            SUM(CASE 
-                WHEN tx.from_address = w.wallet_address THEN -tx.trade_price_eth 
-                WHEN tx.to_address = w.wallet_address THEN tx.trade_price_eth 
-                ELSE 0 
-            END) AS collection_profit
-        FROM 
-            profit_ranks w
-        JOIN 
-            dwd.dwd_whale_transaction_detail tx 
-            ON (tx.from_address = w.wallet_address OR tx.to_address = w.wallet_address)
-        GROUP BY 
-            w.wallet_address, 
-            tx.collection_name
-    ) profits
-    GROUP BY 
+        profit_eth AS best_collection_profit_eth,
+        ROW_NUMBER() OVER (PARTITION BY wallet_address ORDER BY profit_eth DESC) AS rank_num
+    FROM 
+        nft_profits_by_collection
+),
+top_collection_profits AS (
+    -- 每个钱包利润最高的收藏集
+    SELECT 
         wallet_address,
-        collection_name
+        best_collection,
+        best_collection_profit_eth
+    FROM 
+        best_collections
+    WHERE 
+        rank_num = 1
 )
 SELECT 
     r.snapshot_date,
@@ -149,21 +179,21 @@ SELECT
     END AS wallet_tag,
     r.total_profit_eth,
     r.total_profit_usd,
-    COALESCE(ps.profit_7d_eth, CAST(0 AS DECIMAL(30,10))) AS profit_7d_eth,
-    COALESCE(ps.profit_30d_eth, CAST(0 AS DECIMAL(30,10))) AS profit_30d_eth,
+    CAST(COALESCE(ps.profit_7d_eth, 0) AS DECIMAL(30,10)) AS profit_7d_eth,
+    CAST(COALESCE(ps.profit_30d_eth, 0) AS DECIMAL(30,10)) AS profit_30d_eth,
     COALESCE(bc.best_collection, 'Unknown') AS best_collection,
-    COALESCE(bc.best_collection_profit_eth, CAST(0 AS DECIMAL(30,10))) AS best_collection_profit_eth,
+    CAST(COALESCE(bc.best_collection_profit_eth, 0) AS DECIMAL(30,10)) AS best_collection_profit_eth,
     r.total_tx_count,
     r.first_track_date,
     CAST(r.tracking_days AS INT) AS tracking_days,
     CAST(r.influence_score AS DECIMAL(10,2)) AS influence_score,
-    'dws_whale_daily_stats,dim_whale_address' AS data_source,
+    'dws_whale_daily_stats,dwd_whale_transaction_detail' AS data_source,
     CURRENT_TIMESTAMP AS etl_time
 FROM 
     profit_ranks r
 LEFT JOIN 
     recent_profit_stats ps ON r.wallet_address = ps.wallet_address
 LEFT JOIN 
-    best_collections bc ON r.wallet_address = bc.wallet_address
+    top_collection_profits bc ON r.wallet_address = bc.wallet_address
 WHERE 
     r.rank_num <= 10; 

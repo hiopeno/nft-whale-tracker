@@ -98,29 +98,56 @@ daily_sells AS (
         tx_date,
         from_address
 ),
-daily_profits AS (
-    -- 每日利润计算（简化逻辑，实际项目中可能需要更复杂的计算）
+-- 重写利润计算逻辑，精确匹配NFT的买入卖出记录
+nft_profits AS (
     SELECT 
-        s.wallet_date,
-        s.wallet_address,
-        CAST((s.sell_volume_eth - COALESCE(b_prev.total_buy, 0)) AS DECIMAL(30,10)) AS profit_eth,
-        CAST((s.sell_volume_eth - COALESCE(b_prev.total_buy, 0)) * 2500.00 AS DECIMAL(30,10)) AS profit_usd -- 使用简化汇率
+        sell.tx_date AS wallet_date,
+        sell.from_address AS wallet_address,
+        sell.contract_address,
+        sell.token_id,
+        sell.trade_price_eth AS sell_price,
+        buy.trade_price_eth AS buy_price,
+        (sell.trade_price_eth - buy.trade_price_eth) AS profit_per_nft,
+        buy.tx_id AS buy_tx_id  -- 记录买入交易ID，便于追踪
     FROM 
-        daily_sells s
-    LEFT JOIN (
-        -- 计算截至前一天的总买入
+        dwd.dwd_transaction_clean sell
+    JOIN (
+        -- 对每个NFT找到最接近卖出日期的买入记录（最后一次买入）
         SELECT 
-            wallet_address,
-            SUM(buy_volume_eth) AS total_buy
+            t.to_address,
+            t.contract_address,
+            t.token_id,
+            t.trade_price_eth,
+            t.tx_id,
+            t.tx_date,
+            ROW_NUMBER() OVER (
+                PARTITION BY t.to_address, t.contract_address, t.token_id 
+                ORDER BY t.tx_date DESC
+            ) AS rn
         FROM 
-            daily_buys
-        WHERE 
-            wallet_date < CURRENT_DATE
-        GROUP BY 
-            wallet_address
-    ) b_prev ON s.wallet_address = b_prev.wallet_address
+            dwd.dwd_transaction_clean t
+    ) buy ON sell.from_address = buy.to_address
+        AND sell.contract_address = buy.contract_address
+        AND sell.token_id = buy.token_id
+        AND sell.tx_date > buy.tx_date
+        AND buy.rn = 1  -- 确保只取最后一次买入
     WHERE 
-        s.wallet_date = CURRENT_DATE
+        sell.tx_date = CURRENT_DATE  -- 只计算当天的卖出交易
+),
+daily_profits AS (
+    -- 汇总每日利润，只考虑能找到买入记录的卖出交易
+    SELECT 
+        wallet_date,
+        wallet_address,
+        CAST(SUM(profit_per_nft) AS DECIMAL(30,10)) AS profit_eth,
+        CAST(SUM(profit_per_nft) * 2500.00 AS DECIMAL(30,10)) AS profit_usd,  -- 简化汇率
+        CAST(SUM(buy_price) AS DECIMAL(30,10)) AS invested_eth,  -- 实际投入金额
+        COUNT(*) AS matched_sell_count  -- 成功匹配买入的卖出数量
+    FROM 
+        nft_profits
+    GROUP BY 
+        wallet_date,
+        wallet_address
 ),
 wallet_balance AS (
     -- 计算钱包持仓余额
@@ -182,9 +209,10 @@ SELECT
     CAST(COALESCE(s.sell_volume_eth, 0) AS DECIMAL(30,10)) AS sell_volume_eth,
     CAST(COALESCE(p.profit_eth, 0) AS DECIMAL(30,10)) AS profit_eth,
     CAST(COALESCE(p.profit_usd, 0) AS DECIMAL(30,10)) AS profit_usd,
+    -- 修改ROI计算，使用实际投入金额计算
     CAST(
-        CASE WHEN COALESCE(b.buy_volume_eth, 0) > 0 
-             THEN (COALESCE(p.profit_eth, 0) / COALESCE(b.buy_volume_eth, 0)) * 100 
+        CASE WHEN COALESCE(p.invested_eth, 0) > 0 
+             THEN (COALESCE(p.profit_eth, 0) / COALESCE(p.invested_eth, 0)) * 100 
              ELSE 0 
         END 
     AS DECIMAL(10,2)) AS roi_percentage,
@@ -209,7 +237,7 @@ SELECT
     COALESCE(br.is_top100_balance, FALSE) AS is_top100_balance,
     CAST(COALESCE(wb.balance_eth, 0) AS DECIMAL(30,10)) AS balance_eth,
     CAST(COALESCE(wb.balance_eth, 0) * 2500.00 AS DECIMAL(30,10)) AS balance_usd, -- 使用简化汇率
-    CAST('dwd_transaction_clean' AS VARCHAR(100)) AS data_source,
+    CAST('dwd_transaction_clean,nft_profits' AS VARCHAR(100)) AS data_source,
     CAST(CURRENT_TIMESTAMP AS TIMESTAMP) AS etl_time
 FROM 
     daily_buys b

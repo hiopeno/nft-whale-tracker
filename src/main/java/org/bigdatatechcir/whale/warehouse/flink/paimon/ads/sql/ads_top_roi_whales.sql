@@ -68,75 +68,112 @@ CREATE TABLE IF NOT EXISTS ads_top_roi_whales (
 
 -- 计算并更新收益率Top10鲸鱼钱包
 INSERT INTO ads_top_roi_whales
-WITH roi_ranks AS (
-    SELECT 
-        CURRENT_DATE AS snapshot_date,
-        dwa.wallet_address,
-        dwa.whale_type,
-        dwa.roi_percentage,
-        dwa.total_buy_volume_eth,
-        dwa.total_sell_volume_eth,
-        dwa.total_profit_eth,
-        dwa.first_track_date,
-        dwa.whale_score AS influence_score,
-        dwa.avg_hold_days,
-        ROW_NUMBER() OVER (ORDER BY dwa.roi_percentage DESC) AS rank_num
-    FROM 
-        dim.dim_whale_address dwa
-    WHERE 
-        dwa.is_whale = TRUE
-        AND dwa.status = 'ACTIVE'
-        AND dwa.total_buy_volume_eth > 0 -- 确保有有效的ROI计算
-        AND dwa.total_tx_count >= 10 -- 确保有足够的交易记录
-),
-recent_roi AS (
-    -- 计算近期ROI
+WITH whale_data AS (
+    -- 从DWS获取鲸鱼信息和精确计算的ROI
     SELECT 
         wallet_address,
-        CASE 
-            WHEN SUM(CASE WHEN stat_date >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN daily_buy_volume_eth ELSE 0 END) > 0 
-            THEN SUM(CASE WHEN stat_date >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN daily_profit_eth ELSE 0 END) * 100 / 
-                 SUM(CASE WHEN stat_date >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN daily_buy_volume_eth ELSE 0 END)
-            ELSE 0
-        END AS roi_7d_percentage,
-        CASE 
-            WHEN SUM(CASE WHEN stat_date >= TIMESTAMPADD(DAY, -30, CURRENT_DATE) THEN daily_buy_volume_eth ELSE 0 END) > 0 
-            THEN SUM(CASE WHEN stat_date >= TIMESTAMPADD(DAY, -30, CURRENT_DATE) THEN daily_profit_eth ELSE 0 END) * 100 / 
-                 SUM(CASE WHEN stat_date >= TIMESTAMPADD(DAY, -30, CURRENT_DATE) THEN daily_buy_volume_eth ELSE 0 END)
-            ELSE 0
-        END AS roi_30d_percentage
+        MAX(daily_roi_percentage) AS roi_percentage,  -- 使用精确计算的ROI
+        SUM(daily_buy_volume_eth) AS total_buy_volume_eth,
+        SUM(daily_sell_volume_eth) AS total_sell_volume_eth,
+        SUM(daily_profit_eth) AS total_profit_eth,
+        -- 修复DECIMAL类型的AVG问题：先转换为DOUBLE计算平均值，再转回DECIMAL
+        CAST(AVG(CAST(avg_holding_days AS DOUBLE)) AS DECIMAL(10,2)) AS avg_hold_days,
+        MAX(influence_score) AS influence_score
     FROM 
         dws.dws_whale_daily_stats
     GROUP BY 
         wallet_address
 ),
-wallet_collection_roi AS (
-    -- 计算每个钱包的每个收藏集ROI
-    SELECT
-        t.contract_address,
-        SUM(CASE WHEN t.to_address = w.wallet_address THEN t.trade_price_eth ELSE 0 END) AS buy_value,
-        SUM(CASE WHEN t.from_address = w.wallet_address THEN t.trade_price_eth ELSE 0 END) AS sell_value,
-        CASE 
-            WHEN SUM(CASE WHEN t.to_address = w.wallet_address THEN t.trade_price_eth ELSE 0 END) > 0
-            THEN (SUM(CASE WHEN t.from_address = w.wallet_address THEN t.trade_price_eth ELSE 0 END) - 
-                 SUM(CASE WHEN t.to_address = w.wallet_address THEN t.trade_price_eth ELSE 0 END)) * 100 /
-                 SUM(CASE WHEN t.to_address = w.wallet_address THEN t.trade_price_eth ELSE 0 END)
-            ELSE 0
-        END AS roi_percentage,
-        w.wallet_address
+roi_ranks AS (
+    SELECT 
+        CURRENT_DATE AS snapshot_date,
+        wd.wallet_address,
+        dwa.whale_type,
+        wd.roi_percentage,
+        wd.total_buy_volume_eth,
+        wd.total_sell_volume_eth,
+        wd.total_profit_eth,
+        dwa.first_track_date,
+        wd.influence_score,
+        wd.avg_hold_days,
+        ROW_NUMBER() OVER (ORDER BY wd.roi_percentage DESC) AS rank_num
     FROM 
-        dwd.dwd_whale_transaction_detail t
+        whale_data wd
     JOIN 
-        roi_ranks w 
-    ON 
-        t.from_address = w.wallet_address OR t.to_address = w.wallet_address
+        dim.dim_whale_address dwa ON wd.wallet_address = dwa.wallet_address
     WHERE 
-        (t.from_is_whale = TRUE OR t.to_is_whale = TRUE)
+        dwa.is_whale = TRUE
+        AND dwa.status = 'ACTIVE'
+        AND wd.total_buy_volume_eth > 0  -- 确保有有效的ROI计算
+),
+recent_roi AS (
+    -- 计算近期ROI - 使用精确的NFT买卖配对计算
+    SELECT 
+        wds.wallet_address,
+        -- 7天ROI
+        CASE 
+            WHEN SUM(CASE WHEN wds.stat_date >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN wds.daily_profit_eth ELSE 0 END) > 0 
+            THEN AVG(CASE WHEN wds.stat_date >= TIMESTAMPADD(DAY, -7, CURRENT_DATE) THEN wds.daily_roi_percentage ELSE NULL END)
+            ELSE 0
+        END AS roi_7d_percentage,
+        -- 30天ROI
+        CASE 
+            WHEN SUM(CASE WHEN wds.stat_date >= TIMESTAMPADD(DAY, -30, CURRENT_DATE) THEN wds.daily_profit_eth ELSE 0 END) > 0 
+            THEN AVG(CASE WHEN wds.stat_date >= TIMESTAMPADD(DAY, -30, CURRENT_DATE) THEN wds.daily_roi_percentage ELSE NULL END)
+            ELSE 0
+        END AS roi_30d_percentage
+    FROM 
+        dws.dws_whale_daily_stats wds
     GROUP BY 
-        t.contract_address,
-        w.wallet_address
-    HAVING 
-        SUM(CASE WHEN t.to_address = w.wallet_address THEN t.trade_price_eth ELSE 0 END) > 0
+        wds.wallet_address
+),
+-- 通过NFT精确配对计算每个收藏集的ROI
+nft_profits_by_collection AS (
+    -- 通过配对买卖交易计算每个收藏集的收益和投资额
+    SELECT 
+        sell.from_address AS wallet_address,
+        sell.contract_address,
+        SUM(buy.trade_price_eth) AS invested_eth,
+        SUM(sell.trade_price_eth - buy.trade_price_eth) AS profit_eth
+    FROM 
+        dwd.dwd_whale_transaction_detail sell
+    JOIN (
+        -- 找到每个NFT的最后一次买入记录
+        SELECT 
+            t.to_address,
+            t.contract_address,
+            t.token_id,
+            t.trade_price_eth,
+            ROW_NUMBER() OVER (
+                PARTITION BY t.to_address, t.contract_address, t.token_id 
+                ORDER BY t.tx_date DESC
+            ) AS rn
+        FROM 
+            dwd.dwd_whale_transaction_detail t
+    ) buy ON sell.from_address = buy.to_address
+        AND sell.contract_address = buy.contract_address
+        AND sell.token_id = buy.token_id
+        AND buy.rn = 1  -- 确保只取最后一次买入
+    WHERE 
+        sell.from_is_whale = TRUE
+    GROUP BY 
+        sell.from_address,
+        sell.contract_address
+),
+collection_roi AS (
+    -- 计算每个收藏集的ROI
+    SELECT
+        wallet_address,
+        contract_address,
+        CASE 
+            WHEN invested_eth > 0 
+            THEN (profit_eth / invested_eth) * 100 
+            ELSE 0 
+        END AS roi_percentage
+    FROM 
+        nft_profits_by_collection
+    WHERE 
+        invested_eth > 0
 ),
 collection_roi_ranked AS (
     -- 为每个钱包的收藏集ROI排序
@@ -146,7 +183,7 @@ collection_roi_ranked AS (
         roi_percentage,
         ROW_NUMBER() OVER (PARTITION BY wallet_address ORDER BY roi_percentage DESC) AS roi_rank
     FROM 
-        wallet_collection_roi
+        collection_roi
 ),
 best_collection_roi AS (
     -- 选择每个钱包的最佳ROI收藏集
@@ -156,7 +193,7 @@ best_collection_roi AS (
         cr.roi_percentage AS best_collection_roi_percentage
     FROM 
         collection_roi_ranked cr
-    JOIN 
+    LEFT JOIN 
         dim.dim_collection_info c ON cr.contract_address = c.collection_address
     WHERE 
         cr.roi_rank = 1
@@ -174,14 +211,14 @@ SELECT
     r.total_buy_volume_eth,
     r.total_sell_volume_eth,
     r.total_profit_eth,
-    COALESCE(rr.roi_7d_percentage, 0) AS roi_7d_percentage,
-    COALESCE(rr.roi_30d_percentage, 0) AS roi_30d_percentage,
+    CAST(COALESCE(rr.roi_7d_percentage, 0) AS DECIMAL(10,2)) AS roi_7d_percentage,
+    CAST(COALESCE(rr.roi_30d_percentage, 0) AS DECIMAL(10,2)) AS roi_30d_percentage,
     COALESCE(bc.best_collection_roi, 'Unknown') AS best_collection_roi,
-    COALESCE(bc.best_collection_roi_percentage, 0) AS best_collection_roi_percentage,
-    r.avg_hold_days,
+    CAST(COALESCE(bc.best_collection_roi_percentage, 0) AS DECIMAL(10,2)) AS best_collection_roi_percentage,
+    CAST(r.avg_hold_days AS DECIMAL(10,2)) AS avg_hold_days,
     r.first_track_date,
-    r.influence_score,
-    'dws_whale_daily_stats,dim_whale_address' AS data_source,
+    CAST(r.influence_score AS DECIMAL(10,2)) AS influence_score,
+    'dws_whale_daily_stats,dwd_whale_transaction_detail' AS data_source,
     CURRENT_TIMESTAMP AS etl_time
 FROM 
     roi_ranks r
