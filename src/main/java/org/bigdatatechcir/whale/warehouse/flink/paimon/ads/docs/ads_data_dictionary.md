@@ -16,9 +16,9 @@
 
 ## 1. ads_top_profit_whales
 
-**表说明**: 存储收益额排名靠前的鲸鱼钱包信息，用于分析鲸鱼的盈利能力。利润数据从dws_whale_daily_stats表聚合获取，不再从dim_whale_address表直接获取。
+**表说明**: 存储收益额排名靠前的鲸鱼钱包信息，用于分析鲸鱼的盈利能力。利润数据从dws_whale_daily_stats表聚合获取，不再从dim_whale_address表直接获取。表包含不同时间范围(日、周、月)的排名数据。
 
-**主键**: snapshot_date, wallet_address
+**主键**: snapshot_date, wallet_address, rank_timerange
 
 **主要数据来源**: dws_whale_daily_stats, dim_whale_address
 
@@ -26,6 +26,7 @@
 |-------|---------|------|-------|
 | snapshot_date | DATE | 快照日期 | 2023-04-20 |
 | wallet_address | VARCHAR(255) | 钱包地址 | 0x123... |
+| rank_timerange | VARCHAR(10) | 排名周期 | DAY, 7DAYS, 30DAYS |
 | rank_num | INT | 利润排名 | 1 |
 | wallet_tag | VARCHAR(50) | 钱包标签 | Smart Whale |
 | total_profit_eth | DECIMAL(30,10) | 总利润(ETH) | 150.5 |
@@ -43,9 +44,9 @@
 
 ## 2. ads_top_roi_whales
 
-**表说明**: 存储投资回报率排名靠前的鲸鱼钱包信息，用于分析鲸鱼的投资效率
+**表说明**: 存储投资回报率排名靠前的鲸鱼钱包信息，用于分析鲸鱼的投资效率。表包含不同时间范围(日、周、月)的排名数据。
 
-**主键**: snapshot_date, wallet_address
+**主键**: snapshot_date, wallet_address, rank_timerange
 
 **主要数据来源**: dws_whale_daily_stats, dim_whale_address
 
@@ -53,6 +54,7 @@
 |-------|---------|------|-------|
 | snapshot_date | DATE | 快照日期 | 2023-04-20 |
 | wallet_address | VARCHAR(255) | 钱包地址 | 0x456... |
+| rank_timerange | VARCHAR(10) | 排名周期 | DAY, 7DAYS, 30DAYS |
 | rank_num | INT | ROI排名 | 1 |
 | wallet_tag | VARCHAR(50) | 钱包标签 | Smart Whale |
 | roi_percentage | DECIMAL(10,2) | 投资回报率(%) | 230.45 |
@@ -104,9 +106,9 @@
 
 ## 4. ads_tracking_whale_collection_flow
 
-**表说明**: 存储鲸鱼资金净流入/流出排名靠前的收藏集信息，用于分析鲸鱼对收藏集的偏好变化
+**表说明**: 存储鲸鱼资金净流入/流出排名靠前的收藏集信息，用于分析鲸鱼对收藏集的偏好变化。表包含不同时间范围(日、周、月)的排名数据。
 
-**主键**: snapshot_date, collection_address, flow_direction
+**主键**: snapshot_date, collection_address, flow_direction, rank_timerange
 
 **主要数据来源**: dws_collection_whale_flow, dim_collection_info
 
@@ -116,6 +118,7 @@
 | collection_address | VARCHAR(255) | 收藏集地址 | 0xabc... |
 | collection_name | VARCHAR(255) | 收藏集名称 | Bored Ape Yacht Club |
 | flow_direction | VARCHAR(20) | 流向类型(INFLOW/OUTFLOW) | INFLOW |
+| rank_timerange | VARCHAR(10) | 排名周期 | DAY, 7DAYS, 30DAYS |
 | rank_num | INT | 排名 | 1 |
 | net_flow_eth | DECIMAL(30,10) | 净流入/流出金额(ETH) | 25.5 |
 | net_flow_usd | DECIMAL(30,10) | 净流入/流出金额(USD) | 63750.00 |
@@ -134,9 +137,9 @@
 
 ## 5. ads_smart_whale_collection_flow
 
-**表说明**: 存储聪明鲸鱼资金净流入/流出排名靠前的收藏集信息，用于发现有投资价值的收藏集
+**表说明**: 存储聪明鲸鱼资金净流入/流出排名靠前的收藏集信息，用于发现有投资价值的收藏集。表包含不同时间范围(日、周、月)的排名数据。
 
-**主键**: snapshot_date, collection_address, flow_direction
+**主键**: snapshot_date, collection_address, flow_direction, rank_timerange
 
 **主要数据来源**: dws_collection_whale_flow, dim_whale_address
 
@@ -146,6 +149,7 @@
 | collection_address | VARCHAR(255) | 收藏集地址 | 0xdef... |
 | collection_name | VARCHAR(255) | 收藏集名称 | Azuki |
 | flow_direction | VARCHAR(20) | 流向类型(INFLOW/OUTFLOW) | INFLOW |
+| rank_timerange | VARCHAR(10) | 排名周期 | DAY, 7DAYS, 30DAYS |
 | rank_num | INT | 排名 | 1 |
 | smart_whale_net_flow_eth | DECIMAL(30,10) | 聪明鲸鱼净流入/流出(ETH) | 15.5 |
 | smart_whale_net_flow_usd | DECIMAL(30,10) | 聪明鲸鱼净流入/流出(USD) | 38750.00 |
@@ -164,9 +168,9 @@
 
 ## 6. ads_dumb_whale_collection_flow
 
-**表说明**: 存储愚蠢鲸鱼资金净流入/流出排名靠前的收藏集信息，用于识别潜在的风险收藏集
+**表说明**: 存储愚蠢鲸鱼资金净流入/流出排名靠前的收藏集信息，用于识别潜在的风险收藏集。表包含不同时间范围(日、周、月)的排名数据。
 
-**主键**: snapshot_date, collection_address, flow_direction
+**主键**: snapshot_date, collection_address, flow_direction, rank_timerange
 
 **主要数据来源**: dws_collection_whale_flow, dim_whale_address
 
@@ -176,6 +180,7 @@
 | collection_address | VARCHAR(255) | 收藏集地址 | 0xghi... |
 | collection_name | VARCHAR(255) | 收藏集名称 | MoonBirds |
 | flow_direction | VARCHAR(20) | 流向类型(INFLOW/OUTFLOW) | INFLOW |
+| rank_timerange | VARCHAR(10) | 排名周期 | DAY, 7DAYS, 30DAYS |
 | rank_num | INT | 排名 | 1 |
 | dumb_whale_net_flow_eth | DECIMAL(30,10) | 愚蠢鲸鱼净流入/流出(ETH) | 8.5 |
 | dumb_whale_net_flow_usd | DECIMAL(30,10) | 愚蠢鲸鱼净流入/流出(USD) | 21250.00 |
