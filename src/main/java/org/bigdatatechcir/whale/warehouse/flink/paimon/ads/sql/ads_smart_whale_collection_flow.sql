@@ -40,7 +40,9 @@ CREATE TABLE IF NOT EXISTS ads_smart_whale_collection_flow (
     snapshot_date DATE,
     collection_address VARCHAR(255),
     collection_name VARCHAR(255),
+    logo_url VARCHAR(500),                           -- 收藏集logo URL
     flow_direction VARCHAR(20),
+    rank_timerange VARCHAR(10),    -- 新增字段，表示排名周期：DAY, 7DAYS, 30DAYS
     rank_num INT,
     smart_whale_net_flow_eth DECIMAL(30,10),
     smart_whale_net_flow_usd DECIMAL(30,10),
@@ -56,7 +58,7 @@ CREATE TABLE IF NOT EXISTS ads_smart_whale_collection_flow (
     trend_indicator VARCHAR(50),
     data_source VARCHAR(100),
     etl_time TIMESTAMP,
-    PRIMARY KEY (snapshot_date, collection_address, flow_direction) NOT ENFORCED
+    PRIMARY KEY (snapshot_date, collection_address, flow_direction, rank_timerange) NOT ENFORCED
 ) WITH (
     'bucket' = '4',
     'bucket-key' = 'collection_address',
@@ -70,18 +72,22 @@ CREATE TABLE IF NOT EXISTS ads_smart_whale_collection_flow (
 
 -- 计算并更新聪明鲸鱼净流入/流出Top10
 INSERT INTO ads_smart_whale_collection_flow
-WITH inflow_collections AS (
-    -- 计算净流入Top10
+WITH collection_logo_info AS (
+    -- 获取收藏集Logo信息
     SELECT 
-        CURRENT_DATE AS snapshot_date,
+        collection_address,
+        logo_url
+    FROM 
+        dim.dim_collection_info
+),
+base_collection_stats AS (
+    -- 基础统计数据
+    SELECT 
         cf.collection_address,
         MAX(cf.collection_name) AS collection_name,
-        'INFLOW' AS flow_direction,
-        ROW_NUMBER() OVER (ORDER BY SUM(cf.net_flow_eth) DESC) AS rank_num,
-        SUM(cf.net_flow_eth) AS smart_whale_net_flow_eth,
-        SUM(cf.net_flow_eth) * 2500.00 AS smart_whale_net_flow_usd, -- 示例USD汇率
-        COALESCE(SUM(cf.accu_net_flow_7d), CAST(0 AS DECIMAL(30,10))) AS smart_whale_net_flow_7d_eth,
-        COALESCE(SUM(cf.accu_net_flow_30d), CAST(0 AS DECIMAL(30,10))) AS smart_whale_net_flow_30d_eth,
+        SUM(cf.net_flow_eth) AS daily_net_flow_eth,
+        COALESCE(SUM(cf.accu_net_flow_7d), CAST(0 AS DECIMAL(30,10))) AS net_flow_7d_eth,
+        COALESCE(SUM(cf.accu_net_flow_30d), CAST(0 AS DECIMAL(30,10))) AS net_flow_30d_eth,
         CASE 
             WHEN COUNT(cf.floor_price_eth) > 0 
             THEN CAST(SUM(cf.floor_price_eth) / COUNT(cf.floor_price_eth) AS DECIMAL(30,10)) 
@@ -96,114 +102,233 @@ WITH inflow_collections AS (
             WHEN COUNT(cf.whale_trading_percentage) > 0 
             THEN CAST(SUM(cf.whale_trading_percentage) / COUNT(cf.whale_trading_percentage) AS DECIMAL(10,2)) 
             ELSE CAST(0 AS DECIMAL(10,2)) 
-        END AS smart_whale_trading_percentage,
+        END AS smart_whale_trading_percentage
+    FROM 
+        dws.dws_collection_whale_flow cf
+    WHERE 
+        cf.whale_type = 'SMART'
+    GROUP BY 
+        cf.collection_address
+),
+-- 每日流入排名
+daily_inflow_collections AS (
+    SELECT 
+        CURRENT_DATE AS snapshot_date,
+        bcs.collection_address,
+        bcs.collection_name,
+        CAST('INFLOW' AS VARCHAR(10)) AS flow_direction,
+        CAST('DAY' AS VARCHAR(10)) AS rank_timerange,
+        CAST(ROW_NUMBER() OVER (ORDER BY bcs.daily_net_flow_eth DESC) AS INT) AS rank_num,
+        bcs.daily_net_flow_eth AS smart_whale_net_flow_eth,
+        bcs.daily_net_flow_eth * 2500.00 AS smart_whale_net_flow_usd,
+        bcs.net_flow_7d_eth AS smart_whale_net_flow_7d_eth,
+        bcs.net_flow_30d_eth AS smart_whale_net_flow_30d_eth,
+        bcs.floor_price_eth,
+        bcs.floor_price_change_1d,
+        bcs.smart_whale_buyers,
+        bcs.smart_whale_sellers,
+        bcs.smart_whale_buy_volume_eth,
+        bcs.smart_whale_sell_volume_eth,
+        bcs.smart_whale_trading_percentage,
         CASE 
-            WHEN SUM(cf.net_flow_eth) > 10 THEN 'STRONG_INFLOW'
-            WHEN SUM(cf.net_flow_eth) > 5 THEN 'MODERATE_INFLOW'
+            WHEN bcs.daily_net_flow_eth > 10 THEN 'STRONG_INFLOW'
+            WHEN bcs.daily_net_flow_eth > 5 THEN 'MODERATE_INFLOW'
             ELSE 'SLIGHT_INFLOW'
         END AS trend_indicator
     FROM 
-        dws.dws_collection_whale_flow cf
+        base_collection_stats bcs
     WHERE 
-        -- 暂时去除日期限制
-        -- cf.stat_date = CURRENT_DATE
-        cf.whale_type = 'SMART'
-    GROUP BY 
-        cf.collection_address
-    HAVING 
-        SUM(cf.net_flow_eth) > 0
+        bcs.daily_net_flow_eth >= 0
 ),
-outflow_collections AS (
-    -- 计算净流出Top10
+-- 每日流出排名
+daily_outflow_collections AS (
     SELECT 
         CURRENT_DATE AS snapshot_date,
-        cf.collection_address,
-        MAX(cf.collection_name) AS collection_name,
-        'OUTFLOW' AS flow_direction,
-        ROW_NUMBER() OVER (ORDER BY SUM(cf.net_flow_eth) ASC) AS rank_num,
-        SUM(cf.net_flow_eth) AS smart_whale_net_flow_eth,
-        SUM(cf.net_flow_eth) * 2500.00 AS smart_whale_net_flow_usd, -- 示例USD汇率
-        COALESCE(SUM(cf.accu_net_flow_7d), CAST(0 AS DECIMAL(30,10))) AS smart_whale_net_flow_7d_eth,
-        COALESCE(SUM(cf.accu_net_flow_30d), CAST(0 AS DECIMAL(30,10))) AS smart_whale_net_flow_30d_eth,
+        bcs.collection_address,
+        bcs.collection_name,
+        CAST('OUTFLOW' AS VARCHAR(10)) AS flow_direction,
+        CAST('DAY' AS VARCHAR(10)) AS rank_timerange,
+        CAST(ROW_NUMBER() OVER (ORDER BY bcs.daily_net_flow_eth ASC) AS INT) AS rank_num,
+        bcs.daily_net_flow_eth AS smart_whale_net_flow_eth,
+        bcs.daily_net_flow_eth * 2500.00 AS smart_whale_net_flow_usd,
+        bcs.net_flow_7d_eth AS smart_whale_net_flow_7d_eth,
+        bcs.net_flow_30d_eth AS smart_whale_net_flow_30d_eth,
+        bcs.floor_price_eth,
+        bcs.floor_price_change_1d,
+        bcs.smart_whale_buyers,
+        bcs.smart_whale_sellers,
+        bcs.smart_whale_buy_volume_eth,
+        bcs.smart_whale_sell_volume_eth,
+        bcs.smart_whale_trading_percentage,
         CASE 
-            WHEN COUNT(cf.floor_price_eth) > 0 
-            THEN CAST(SUM(cf.floor_price_eth) / COUNT(cf.floor_price_eth) AS DECIMAL(30,10)) 
-            ELSE CAST(0 AS DECIMAL(30,10)) 
-        END AS floor_price_eth,
-        CAST(0 AS DECIMAL(10,2)) AS floor_price_change_1d, -- 需要其他数据源
-        SUM(cf.unique_whale_buyers) AS smart_whale_buyers,
-        SUM(cf.unique_whale_sellers) AS smart_whale_sellers,
-        SUM(cf.whale_buy_volume_eth) AS smart_whale_buy_volume_eth,
-        SUM(cf.whale_sell_volume_eth) AS smart_whale_sell_volume_eth,
-        CASE 
-            WHEN COUNT(cf.whale_trading_percentage) > 0 
-            THEN CAST(SUM(cf.whale_trading_percentage) / COUNT(cf.whale_trading_percentage) AS DECIMAL(10,2)) 
-            ELSE CAST(0 AS DECIMAL(10,2)) 
-        END AS smart_whale_trading_percentage,
-        CASE 
-            WHEN SUM(cf.net_flow_eth) < -10 THEN 'STRONG_OUTFLOW'
-            WHEN SUM(cf.net_flow_eth) < -5 THEN 'MODERATE_OUTFLOW'
+            WHEN bcs.daily_net_flow_eth < -10 THEN 'STRONG_OUTFLOW'
+            WHEN bcs.daily_net_flow_eth < -5 THEN 'MODERATE_OUTFLOW'
             ELSE 'SLIGHT_OUTFLOW'
         END AS trend_indicator
     FROM 
-        dws.dws_collection_whale_flow cf
+        base_collection_stats bcs
     WHERE 
-        -- 暂时去除日期限制
-        -- cf.stat_date = CURRENT_DATE
-        cf.whale_type = 'SMART'
-    GROUP BY 
-        cf.collection_address
-    HAVING 
-        SUM(cf.net_flow_eth) < 0
+        bcs.daily_net_flow_eth <= 0
+),
+-- 7天流入排名
+weekly_inflow_collections AS (
+    SELECT 
+        CURRENT_DATE AS snapshot_date,
+        bcs.collection_address,
+        bcs.collection_name,
+        CAST('INFLOW' AS VARCHAR(10)) AS flow_direction,
+        CAST('7DAYS' AS VARCHAR(10)) AS rank_timerange,
+        CAST(ROW_NUMBER() OVER (ORDER BY bcs.net_flow_7d_eth DESC) AS INT) AS rank_num,
+        bcs.net_flow_7d_eth AS smart_whale_net_flow_eth,
+        bcs.net_flow_7d_eth * 2500.00 AS smart_whale_net_flow_usd,
+        bcs.net_flow_7d_eth AS smart_whale_net_flow_7d_eth,
+        bcs.net_flow_30d_eth AS smart_whale_net_flow_30d_eth,
+        bcs.floor_price_eth,
+        bcs.floor_price_change_1d,
+        bcs.smart_whale_buyers,
+        bcs.smart_whale_sellers,
+        bcs.smart_whale_buy_volume_eth,
+        bcs.smart_whale_sell_volume_eth,
+        bcs.smart_whale_trading_percentage,
+        CASE 
+            WHEN bcs.net_flow_7d_eth > 30 THEN 'STRONG_INFLOW'
+            WHEN bcs.net_flow_7d_eth > 15 THEN 'MODERATE_INFLOW'
+            ELSE 'SLIGHT_INFLOW'
+        END AS trend_indicator
+    FROM 
+        base_collection_stats bcs
+    WHERE 
+        bcs.net_flow_7d_eth >= 0
+),
+-- 7天流出排名
+weekly_outflow_collections AS (
+    SELECT 
+        CURRENT_DATE AS snapshot_date,
+        bcs.collection_address,
+        bcs.collection_name,
+        CAST('OUTFLOW' AS VARCHAR(10)) AS flow_direction,
+        CAST('7DAYS' AS VARCHAR(10)) AS rank_timerange,
+        CAST(ROW_NUMBER() OVER (ORDER BY bcs.net_flow_7d_eth ASC) AS INT) AS rank_num,
+        bcs.net_flow_7d_eth AS smart_whale_net_flow_eth,
+        bcs.net_flow_7d_eth * 2500.00 AS smart_whale_net_flow_usd,
+        bcs.net_flow_7d_eth AS smart_whale_net_flow_7d_eth,
+        bcs.net_flow_30d_eth AS smart_whale_net_flow_30d_eth,
+        bcs.floor_price_eth,
+        bcs.floor_price_change_1d,
+        bcs.smart_whale_buyers,
+        bcs.smart_whale_sellers,
+        bcs.smart_whale_buy_volume_eth,
+        bcs.smart_whale_sell_volume_eth,
+        bcs.smart_whale_trading_percentage,
+        CASE 
+            WHEN bcs.net_flow_7d_eth < -30 THEN 'STRONG_OUTFLOW'
+            WHEN bcs.net_flow_7d_eth < -15 THEN 'MODERATE_OUTFLOW'
+            ELSE 'SLIGHT_OUTFLOW'
+        END AS trend_indicator
+    FROM 
+        base_collection_stats bcs
+    WHERE 
+        bcs.net_flow_7d_eth <= 0
+),
+-- 30天流入排名
+monthly_inflow_collections AS (
+    SELECT 
+        CURRENT_DATE AS snapshot_date,
+        bcs.collection_address,
+        bcs.collection_name,
+        CAST('INFLOW' AS VARCHAR(10)) AS flow_direction,
+        CAST('30DAYS' AS VARCHAR(10)) AS rank_timerange,
+        CAST(ROW_NUMBER() OVER (ORDER BY bcs.net_flow_30d_eth DESC) AS INT) AS rank_num,
+        bcs.net_flow_30d_eth AS smart_whale_net_flow_eth,
+        bcs.net_flow_30d_eth * 2500.00 AS smart_whale_net_flow_usd,
+        bcs.net_flow_7d_eth AS smart_whale_net_flow_7d_eth,
+        bcs.net_flow_30d_eth AS smart_whale_net_flow_30d_eth,
+        bcs.floor_price_eth,
+        bcs.floor_price_change_1d,
+        bcs.smart_whale_buyers,
+        bcs.smart_whale_sellers,
+        bcs.smart_whale_buy_volume_eth,
+        bcs.smart_whale_sell_volume_eth,
+        bcs.smart_whale_trading_percentage,
+        CASE 
+            WHEN bcs.net_flow_30d_eth > 50 THEN 'STRONG_INFLOW'
+            WHEN bcs.net_flow_30d_eth > 25 THEN 'MODERATE_INFLOW'
+            ELSE 'SLIGHT_INFLOW'
+        END AS trend_indicator
+    FROM 
+        base_collection_stats bcs
+    WHERE 
+        bcs.net_flow_30d_eth >= 0
+),
+-- 30天流出排名
+monthly_outflow_collections AS (
+    SELECT 
+        CURRENT_DATE AS snapshot_date,
+        bcs.collection_address,
+        bcs.collection_name,
+        CAST('OUTFLOW' AS VARCHAR(10)) AS flow_direction,
+        CAST('30DAYS' AS VARCHAR(10)) AS rank_timerange,
+        CAST(ROW_NUMBER() OVER (ORDER BY bcs.net_flow_30d_eth ASC) AS INT) AS rank_num,
+        bcs.net_flow_30d_eth AS smart_whale_net_flow_eth,
+        bcs.net_flow_30d_eth * 2500.00 AS smart_whale_net_flow_usd,
+        bcs.net_flow_7d_eth AS smart_whale_net_flow_7d_eth,
+        bcs.net_flow_30d_eth AS smart_whale_net_flow_30d_eth,
+        bcs.floor_price_eth,
+        bcs.floor_price_change_1d,
+        bcs.smart_whale_buyers,
+        bcs.smart_whale_sellers,
+        bcs.smart_whale_buy_volume_eth,
+        bcs.smart_whale_sell_volume_eth,
+        bcs.smart_whale_trading_percentage,
+        CASE 
+            WHEN bcs.net_flow_30d_eth < -50 THEN 'STRONG_OUTFLOW'
+            WHEN bcs.net_flow_30d_eth < -25 THEN 'MODERATE_OUTFLOW'
+            ELSE 'SLIGHT_OUTFLOW'
+        END AS trend_indicator
+    FROM 
+        base_collection_stats bcs
+    WHERE 
+        bcs.net_flow_30d_eth <= 0
+),
+-- 合并所有排名
+all_collections AS (
+    SELECT * FROM daily_inflow_collections
+    UNION ALL
+    SELECT * FROM daily_outflow_collections
+    UNION ALL
+    SELECT * FROM weekly_inflow_collections
+    UNION ALL
+    SELECT * FROM weekly_outflow_collections
+    UNION ALL
+    SELECT * FROM monthly_inflow_collections
+    UNION ALL
+    SELECT * FROM monthly_outflow_collections
 )
 SELECT 
-    snapshot_date,
-    collection_address,
-    collection_name,
-    flow_direction,
-    CAST(rank_num AS INT) AS rank_num,
-    smart_whale_net_flow_eth,
-    smart_whale_net_flow_usd,
-    smart_whale_net_flow_7d_eth,
-    smart_whale_net_flow_30d_eth,
-    CAST(smart_whale_buyers AS INT) AS smart_whale_buyers,
-    CAST(smart_whale_sellers AS INT) AS smart_whale_sellers,
-    smart_whale_buy_volume_eth,
-    smart_whale_sell_volume_eth,
-    smart_whale_trading_percentage,
-    floor_price_eth,
-    floor_price_change_1d,
-    trend_indicator,
-    'dws_collection_whale_flow' AS data_source,
+    ac.snapshot_date,
+    ac.collection_address,
+    ac.collection_name,
+    cli.logo_url,
+    CAST(ac.flow_direction AS VARCHAR(10)) AS flow_direction,
+    CAST(ac.rank_timerange AS VARCHAR(10)) AS rank_timerange,
+    CAST(ac.rank_num AS INT) AS rank_num,
+    ac.smart_whale_net_flow_eth,
+    ac.smart_whale_net_flow_usd,
+    ac.smart_whale_net_flow_7d_eth,
+    ac.smart_whale_net_flow_30d_eth,
+    CAST(ac.smart_whale_buyers AS INT) AS smart_whale_buyers,
+    CAST(ac.smart_whale_sellers AS INT) AS smart_whale_sellers,
+    ac.smart_whale_buy_volume_eth,
+    ac.smart_whale_sell_volume_eth,
+    ac.smart_whale_trading_percentage,
+    ac.floor_price_eth,
+    ac.floor_price_change_1d,
+    ac.trend_indicator,
+    CAST('dws_collection_whale_flow,dim_collection_info' AS VARCHAR(100)) AS data_source,
     CURRENT_TIMESTAMP AS etl_time
 FROM 
-    inflow_collections
+    all_collections ac
+LEFT JOIN
+    collection_logo_info cli ON ac.collection_address = cli.collection_address
 WHERE 
-    rank_num <= 10
-
-UNION ALL
-
-SELECT 
-    snapshot_date,
-    collection_address,
-    collection_name,
-    flow_direction,
-    CAST(rank_num AS INT) AS rank_num,
-    smart_whale_net_flow_eth,
-    smart_whale_net_flow_usd,
-    smart_whale_net_flow_7d_eth,
-    smart_whale_net_flow_30d_eth,
-    CAST(smart_whale_buyers AS INT) AS smart_whale_buyers,
-    CAST(smart_whale_sellers AS INT) AS smart_whale_sellers,
-    smart_whale_buy_volume_eth,
-    smart_whale_sell_volume_eth,
-    smart_whale_trading_percentage,
-    floor_price_eth,
-    floor_price_change_1d,
-    trend_indicator,
-    'dws_collection_whale_flow' AS data_source,
-    CURRENT_TIMESTAMP AS etl_time
-FROM 
-    outflow_collections
-WHERE 
-    rank_num <= 10; 
+    ac.rank_num <= 10; 

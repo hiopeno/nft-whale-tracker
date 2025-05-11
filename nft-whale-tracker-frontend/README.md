@@ -1,19 +1,24 @@
-# NFT鲸鱼追踪系统前端
+# NFT巨鲸追踪系统前端
 
 ## 项目概述
 
-本项目是NFT鲸鱼追踪系统的前端部分，提供了以下功能：
+本项目是NFT巨鲸追踪系统的前端部分，提供了以下功能：
 
-- 鲸鱼追踪仪表盘：实时展示鲸鱼钱包活动
-- 低价NFT机会：展示低价NFT交易机会
-- 交易策略推荐：提供NFT交易策略建议
+- 巨鲸追踪：实时展示鲸鱼钱包活动与分析
+- 交易走势：展示NFT市场交易趋势
+- 藏品狙击：快速发现低价NFT交易机会
+- 策略推荐：提供NFT交易策略建议
+- 系统设置：配置用户偏好和系统参数
 
 ## 技术栈
 
 - React 18 + TypeScript
+- Vite 构建工具
 - Ant Design + Ant Design Pro Components
-- ECharts
-- Docker
+- ECharts + echarts-for-react 数据可视化
+- SockJS + STOMP 实时通信
+- Axios HTTP客户端
+- Dayjs 日期处理库
 
 ## 开发环境
 
@@ -68,15 +73,23 @@ nft-whale-tracker-frontend/
 ├── public/                  # 静态资源
 ├── src/                     # 源代码
 │   ├── api/                 # API接口
-│   ├── assets/              # 资源文件
+│   │   ├── api.ts           # API调用函数
+│   │   ├── config.ts        # API配置
+│   │   ├── index.ts         # API导出
+│   │   └── websocket.ts     # WebSocket服务
+│   ├── assets/              # 静态资源文件
 │   ├── components/          # 共用组件
 │   │   └── Layout/          # 布局组件
 │   ├── hooks/               # 自定义hooks
 │   ├── pages/               # 页面组件
-│   │   ├── WhaleTrack/      # 鲸鱼追踪页面
+│   │   ├── WhaleTrack/      # 巨鲸追踪页面
+│   │   ├── TradingTrend/    # 交易走势页面
 │   │   ├── NftSnipe/        # 藏品狙击页面
-│   │   └── Strategy/        # 策略推荐页面
+│   │   ├── Strategy/        # 策略推荐页面
+│   │   └── Setting/         # 系统设置页面
+│   ├── services/            # 服务逻辑
 │   ├── store/               # 状态管理
+│   ├── styles/              # 样式文件
 │   ├── utils/               # 工具函数
 │   ├── App.tsx              # 应用入口
 │   └── main.tsx             # 主入口
@@ -91,16 +104,35 @@ nft-whale-tracker-frontend/
 └── vite.config.ts           # Vite配置
 ```
 
-## 后续计划
+## 特性介绍
 
-- 添加用户认证
-- 实现实时数据更新
-- 增加图表与分析功能
-- 优化移动端体验
+### 实时数据更新
+
+前端通过WebSocket与后端保持实时连接，接收以下类型的实时通知：
+
+1. 鲸鱼交易动态：监控大户交易活动
+2. 低价机会提醒：发现价格异常的NFT
+3. 系统消息通知：接收系统级别的提醒
+
+### 数据可视化
+
+使用ECharts实现丰富的数据可视化图表：
+
+1. 交易量趋势图
+2. 价格波动图表
+3. 鲸鱼活动热力图
+4. 资金流向关系图
+
+### 主题设计
+
+采用科技感十足的暗色主题设计，包含：
+
+1. 发光边框效果
+2. 渐变背景色
+3. 元素悬停动画
+4. 高对比度数据展示
 
 ## 与后端对接
-
-本前端项目通过API和WebSocket与后端进行对接，对接方式如下：
 
 ### REST API对接
 
@@ -108,12 +140,12 @@ nft-whale-tracker-frontend/
 
 ```typescript
 // 示例：获取鲸鱼统计数据
-whaleTrackingApi.getWhaleStats().then(data => {
+api.getWhaleStats().then(data => {
   console.log(data);
 });
 
 // 示例：获取交易列表
-whaleTrackingApi.getTransactions({
+api.getTransactions({
   page: 1,
   pageSize: 10,
   whaleType: 'all'
@@ -147,10 +179,12 @@ websocketService.subscribeSystemNotifications((message) => {
 });
 ```
 
+## 环境配置
+
 ### 开发环境配置
 
-在开发环境中，前端默认连接`http://localhost:8080`和`ws://localhost:8080/ws`。如需修改，请在`/src/api/config.ts`中调整配置。
+在开发环境中，前端默认连接`http://localhost:8886/api`和`ws://localhost:8886/websocket`。如需修改，请在`/src/api/config.ts`中调整配置。
 
 ### 生产环境配置
 
-在生产环境中，前端使用相对路径`/api`和`/ws`，通过Nginx代理转发到后端服务器。
+在生产环境中，前端使用相对路径`/api`和`/websocket`，通过Nginx代理转发到后端服务器。

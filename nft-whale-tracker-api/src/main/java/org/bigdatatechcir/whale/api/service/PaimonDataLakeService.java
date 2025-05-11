@@ -177,19 +177,19 @@ public class PaimonDataLakeService {
             if ("ads_tracking_whale_collection_flow".equals(tableName)) {
                 // 根据数据字典定义字段
                 List<String> fieldNames = Arrays.asList(
-                    "snapshot_date", "collection_address", "collection_name", "flow_direction", 
-                    "rank_timerange", "rank_num", "net_flow_eth", "net_flow_usd", "net_flow_7d_eth", 
-                    "net_flow_30d_eth", "floor_price_eth", "floor_price_change_1d", 
-                    "unique_whale_buyers", "unique_whale_sellers", "whale_trading_percentage", 
-                    "smart_whale_percentage", "dumb_whale_percentage", "trend_indicator", 
-                    "data_source", "etl_time"
+                    "snapshot_date", "collection_address", "collection_name", "logo_url", 
+                    "flow_direction", "rank_timerange", "rank_num", "net_flow_eth", 
+                    "net_flow_usd", "net_flow_7d_eth", "net_flow_30d_eth", "floor_price_eth", 
+                    "floor_price_change_1d", "unique_whale_buyers", "unique_whale_sellers", 
+                    "whale_trading_percentage", "smart_whale_percentage", "dumb_whale_percentage", 
+                    "trend_indicator", "data_source", "etl_time"
                 );
                 
                 List<DataType> fieldTypes = Arrays.asList(
                     DataTypes.DATE(), DataTypes.STRING(), DataTypes.STRING(), DataTypes.STRING(),
-                    DataTypes.STRING(), DataTypes.INT(), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10),
-                    DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(10, 2),
-                    DataTypes.INT(), DataTypes.INT(), DataTypes.DECIMAL(10, 2),
+                    DataTypes.STRING(), DataTypes.STRING(), DataTypes.INT(), DataTypes.DECIMAL(30, 10), 
+                    DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10), 
+                    DataTypes.DECIMAL(10, 2), DataTypes.INT(), DataTypes.INT(), DataTypes.DECIMAL(10, 2),
                     DataTypes.DECIMAL(10, 2), DataTypes.DECIMAL(10, 2), DataTypes.STRING(),
                     DataTypes.STRING(), DataTypes.TIMESTAMP(3)
                 );
@@ -204,16 +204,16 @@ public class PaimonDataLakeService {
                     "snapshot_date", "tx_hash", "contract_address", "token_id", 
                     "tx_timestamp", "from_address", "to_address", "from_whale_type",
                     "to_whale_type", "from_influence_score", "to_influence_score", "collection_name",
-                    "trade_price_eth", "trade_price_usd", "floor_price_eth", "price_to_floor_ratio",
-                    "marketplace", "data_source", "etl_time"
+                    "logo_url", "trade_price_eth", "trade_price_usd", "floor_price_eth", 
+                    "price_to_floor_ratio", "marketplace", "data_source", "etl_time"
                 );
                 
                 List<DataType> fieldTypes = Arrays.asList(
                     DataTypes.DATE(), DataTypes.STRING(), DataTypes.STRING(), DataTypes.STRING(),
                     DataTypes.TIMESTAMP(3), DataTypes.STRING(), DataTypes.STRING(), DataTypes.STRING(),
                     DataTypes.STRING(), DataTypes.DECIMAL(10, 2), DataTypes.DECIMAL(10, 2), DataTypes.STRING(),
-                    DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(10, 2),
-                    DataTypes.STRING(), DataTypes.STRING(), DataTypes.TIMESTAMP(3)
+                    DataTypes.STRING(), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10), 
+                    DataTypes.DECIMAL(10, 2), DataTypes.STRING(), DataTypes.STRING(), DataTypes.TIMESTAMP(3)
                 );
                 
                 RowType rowType = RowType.of(fieldTypes.toArray(new DataType[0]), fieldNames.toArray(new String[0]));
@@ -247,21 +247,21 @@ public class PaimonDataLakeService {
             } else if ("ads_dumb_whale_collection_flow".equals(tableName)) {
                 // 根据数据字典定义ads_dumb_whale_collection_flow表字段
                 List<String> fieldNames = Arrays.asList(
-                    "snapshot_date", "collection_address", "collection_name", "flow_direction", 
-                    "rank_timerange", "rank_num", "dumb_whale_net_flow_eth", "dumb_whale_net_flow_usd", "dumb_whale_net_flow_7d_eth", 
-                    "dumb_whale_net_flow_30d_eth", "dumb_whale_buyers", "dumb_whale_sellers", 
-                    "dumb_whale_buy_volume_eth", "dumb_whale_sell_volume_eth", "dumb_whale_trading_percentage", 
-                    "floor_price_eth", "floor_price_change_1d", "trend_indicator", 
-                    "data_source", "etl_time"
+                    "snapshot_date", "collection_address", "collection_name", "logo_url", 
+                    "flow_direction", "rank_timerange", "rank_num", "dumb_whale_net_flow_eth", 
+                    "dumb_whale_net_flow_usd", "dumb_whale_net_flow_7d_eth", "dumb_whale_net_flow_30d_eth", 
+                    "dumb_whale_buyers", "dumb_whale_sellers", "dumb_whale_buy_volume_eth", 
+                    "dumb_whale_sell_volume_eth", "dumb_whale_trading_percentage", "floor_price_eth", 
+                    "floor_price_change_1d", "trend_indicator", "data_source", "etl_time"
                 );
                 
                 List<DataType> fieldTypes = Arrays.asList(
                     DataTypes.DATE(), DataTypes.STRING(), DataTypes.STRING(), DataTypes.STRING(),
-                    DataTypes.STRING(), DataTypes.INT(), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10),
-                    DataTypes.DECIMAL(30, 10), DataTypes.INT(), DataTypes.INT(),
-                    DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(10, 2),
-                    DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(10, 2), DataTypes.STRING(),
-                    DataTypes.STRING(), DataTypes.TIMESTAMP(3)
+                    DataTypes.STRING(), DataTypes.STRING(), DataTypes.INT(), DataTypes.DECIMAL(30, 10), 
+                    DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10),
+                    DataTypes.INT(), DataTypes.INT(), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10), 
+                    DataTypes.DECIMAL(10, 2), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(10, 2), 
+                    DataTypes.STRING(), DataTypes.STRING(), DataTypes.TIMESTAMP(3)
                 );
                 
                 RowType rowType = RowType.of(fieldTypes.toArray(new DataType[0]), fieldNames.toArray(new String[0]));
@@ -271,21 +271,21 @@ public class PaimonDataLakeService {
             } else if ("ads_smart_whale_collection_flow".equals(tableName)) {
                 // 根据数据字典定义ads_smart_whale_collection_flow表字段
                 List<String> fieldNames = Arrays.asList(
-                    "snapshot_date", "collection_address", "collection_name", "flow_direction", 
-                    "rank_timerange", "rank_num", "smart_whale_net_flow_eth", "smart_whale_net_flow_usd", "smart_whale_net_flow_7d_eth", 
-                    "smart_whale_net_flow_30d_eth", "smart_whale_buyers", "smart_whale_sellers", 
-                    "smart_whale_buy_volume_eth", "smart_whale_sell_volume_eth", "smart_whale_trading_percentage", 
-                    "floor_price_eth", "floor_price_change_1d", "trend_indicator", 
-                    "data_source", "etl_time"
+                    "snapshot_date", "collection_address", "collection_name", "logo_url", 
+                    "flow_direction", "rank_timerange", "rank_num", "smart_whale_net_flow_eth", 
+                    "smart_whale_net_flow_usd", "smart_whale_net_flow_7d_eth", "smart_whale_net_flow_30d_eth", 
+                    "smart_whale_buyers", "smart_whale_sellers", "smart_whale_buy_volume_eth", 
+                    "smart_whale_sell_volume_eth", "smart_whale_trading_percentage", "floor_price_eth", 
+                    "floor_price_change_1d", "trend_indicator", "data_source", "etl_time"
                 );
                 
                 List<DataType> fieldTypes = Arrays.asList(
                     DataTypes.DATE(), DataTypes.STRING(), DataTypes.STRING(), DataTypes.STRING(),
-                    DataTypes.STRING(), DataTypes.INT(), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10),
-                    DataTypes.DECIMAL(30, 10), DataTypes.INT(), DataTypes.INT(),
-                    DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(10, 2),
-                    DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(10, 2), DataTypes.STRING(),
-                    DataTypes.STRING(), DataTypes.TIMESTAMP(3)
+                    DataTypes.STRING(), DataTypes.STRING(), DataTypes.INT(), DataTypes.DECIMAL(30, 10), 
+                    DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10),
+                    DataTypes.INT(), DataTypes.INT(), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(30, 10), 
+                    DataTypes.DECIMAL(10, 2), DataTypes.DECIMAL(30, 10), DataTypes.DECIMAL(10, 2), 
+                    DataTypes.STRING(), DataTypes.STRING(), DataTypes.TIMESTAMP(3)
                 );
                 
                 RowType rowType = RowType.of(fieldTypes.toArray(new DataType[0]), fieldNames.toArray(new String[0]));

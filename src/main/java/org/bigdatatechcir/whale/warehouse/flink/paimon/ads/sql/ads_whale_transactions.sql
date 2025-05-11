@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS ads_whale_transactions (
     
     -- 收藏集信息
     collection_name VARCHAR(255),                    -- 收藏集名称
+    logo_url VARCHAR(500),                           -- 收藏集logo URL
     
     -- 交易详情
     trade_price_eth DECIMAL(30,10),                  -- 交易价格(ETH)
@@ -77,6 +78,7 @@ CREATE TABLE IF NOT EXISTS ads_whale_transactions (
     'file.format' = 'parquet',
     'merge-engine' = 'deduplicate',
     'changelog-producer' = 'input',
+    'sort-key' = 'tx_timestamp DESC',
     'compaction.min.file-num' = '5',
     'compaction.max.file-num' = '100',
     'compaction.target-file-size' = '128MB'
@@ -107,6 +109,14 @@ FROM
 WHERE 
     c.collection_date = CURRENT_DATE;
 
+-- 创建临时视图获取收藏集logo信息
+CREATE TEMPORARY VIEW IF NOT EXISTS tmp_collection_logo AS
+SELECT 
+    ci.collection_address,
+    ci.logo_url
+FROM 
+    dim.dim_collection_info ci;
+
 -- 插入数据到目标表
 INSERT INTO ads_whale_transactions
 SELECT 
@@ -129,6 +139,7 @@ SELECT
     
     -- 收藏集信息
     t.collection_name,
+    cl.logo_url,  -- 移动到collection_name和trade_price_eth之间
     
     -- 交易详情
     t.trade_price_eth,
@@ -143,19 +154,21 @@ SELECT
     t.platform AS marketplace,
     
     -- 数据源和处理时间
-    'dwd_whale_transaction_detail,dim_whale_address,dws_collection_daily_stats' AS data_source,
+    'dwd_whale_transaction_detail,dim_whale_address,dws_collection_daily_stats,dim_collection_info' AS data_source,
     CURRENT_TIMESTAMP AS etl_time
 FROM 
     dwd.dwd_whale_transaction_detail t
     LEFT JOIN tmp_whale_info from_whale ON t.from_address = from_whale.wallet_address
     LEFT JOIN tmp_whale_info to_whale ON t.to_address = to_whale.wallet_address
     LEFT JOIN tmp_collection_info c ON t.contract_address = c.contract_address
+    LEFT JOIN tmp_collection_logo cl ON t.contract_address = cl.collection_address  -- 添加logo关联
 WHERE 
     -- 筛选鲸鱼相关交易
     (t.from_is_whale = TRUE OR t.to_is_whale = TRUE)
-    -- 只处理最近两周的数据
-    AND t.tx_date BETWEEN CURRENT_DATE - INTERVAL '14' DAY AND CURRENT_DATE;
+    -- 只处理最近一天的数据
+    AND t.tx_date BETWEEN CURRENT_DATE - INTERVAL '1' DAY AND CURRENT_DATE;
 
 -- 删除临时视图
 DROP TEMPORARY VIEW IF EXISTS tmp_whale_info;
-DROP TEMPORARY VIEW IF EXISTS tmp_collection_info; 
+DROP TEMPORARY VIEW IF EXISTS tmp_collection_info;
+DROP TEMPORARY VIEW IF EXISTS tmp_collection_logo;  -- 删除临时logo视图 

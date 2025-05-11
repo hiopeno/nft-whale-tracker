@@ -39,6 +39,7 @@ USE ads;
 CREATE TABLE IF NOT EXISTS ads_top_profit_whales (
     snapshot_date DATE,
     wallet_address VARCHAR(255),
+    rank_timerange VARCHAR(10),    -- 新增字段，表示排名周期：DAY, 7DAYS, 30DAYS
     rank_num INT,
     wallet_tag VARCHAR(255),
     total_profit_eth DECIMAL(30,10),
@@ -53,7 +54,7 @@ CREATE TABLE IF NOT EXISTS ads_top_profit_whales (
     influence_score DECIMAL(10,2),
     data_source VARCHAR(100),
     etl_time TIMESTAMP,
-    PRIMARY KEY (snapshot_date, wallet_address) NOT ENFORCED
+    PRIMARY KEY (snapshot_date, wallet_address, rank_timerange) NOT ENFORCED
 ) WITH (
     'bucket' = '4',
     'bucket-key' = 'wallet_address',
@@ -65,7 +66,8 @@ CREATE TABLE IF NOT EXISTS ads_top_profit_whales (
     'compaction.target-file-size' = '128MB'
 );
 
--- 计算并更新收益额Top10鲸鱼钱包
+-- 计算并更新收益额Top10鲸鱼钱包 - 基本数据CTE
+-- 插入所有时间范围的排名数据
 INSERT INTO ads_top_profit_whales
 WITH whale_profit_data AS (
     -- 从DWS层获取已精确计算的利润数据
@@ -79,26 +81,6 @@ WITH whale_profit_data AS (
         dws.dws_whale_daily_stats
     GROUP BY 
         wallet_address
-),
-profit_ranks AS (
-    SELECT 
-        CURRENT_DATE AS snapshot_date,
-        wp.wallet_address,
-        dwa.whale_type,
-        wp.total_profit_eth,
-        wp.total_profit_usd,
-        CAST(wp.total_tx_count AS INT) AS total_tx_count,
-        dwa.first_track_date,
-        TIMESTAMPDIFF(DAY, dwa.first_track_date, CURRENT_DATE) AS tracking_days,
-        wp.influence_score,
-        CAST(ROW_NUMBER() OVER (ORDER BY wp.total_profit_eth DESC) AS INT) AS rank_num
-    FROM 
-        whale_profit_data wp
-    JOIN 
-        dim.dim_whale_address dwa ON wp.wallet_address = dwa.wallet_address
-    WHERE 
-        dwa.is_whale = TRUE
-        AND dwa.status = 'ACTIVE'
 ),
 recent_profit_stats AS (
     -- 计算近期利润 - 使用精确计算的利润
@@ -167,11 +149,90 @@ top_collection_profits AS (
         best_collections
     WHERE 
         rank_num = 1
+),
+-- 每日排名
+daily_profit_ranks AS (
+    SELECT 
+        CURRENT_DATE AS snapshot_date,
+        wp.wallet_address,
+        'DAY' AS rank_timerange,
+        dwa.whale_type,
+        wp.total_profit_eth,
+        wp.total_profit_usd,
+        CAST(wp.total_tx_count AS INT) AS total_tx_count,
+        dwa.first_track_date,
+        TIMESTAMPDIFF(DAY, dwa.first_track_date, CURRENT_DATE) AS tracking_days,
+        wp.influence_score,
+        CAST(ROW_NUMBER() OVER (ORDER BY wp.total_profit_eth DESC) AS INT) AS rank_num
+    FROM 
+        whale_profit_data wp
+    JOIN 
+        dim.dim_whale_address dwa ON wp.wallet_address = dwa.wallet_address
+    WHERE 
+        dwa.is_whale = TRUE
+      --  AND dwa.status = 'ACTIVE'
+),
+-- 7天排名
+weekly_profit_ranks AS (
+    SELECT 
+        CURRENT_DATE AS snapshot_date,
+        wp.wallet_address,
+        CAST('7DAYS' AS VARCHAR(10)) AS rank_timerange,
+        dwa.whale_type,
+        wp.total_profit_eth,
+        wp.total_profit_usd,
+        CAST(wp.total_tx_count AS INT) AS total_tx_count,
+        dwa.first_track_date,
+        TIMESTAMPDIFF(DAY, dwa.first_track_date, CURRENT_DATE) AS tracking_days,
+        wp.influence_score,
+        CAST(ROW_NUMBER() OVER (ORDER BY ps.profit_7d_eth DESC) AS INT) AS rank_num
+    FROM 
+        whale_profit_data wp
+    JOIN 
+        dim.dim_whale_address dwa ON wp.wallet_address = dwa.wallet_address
+    JOIN
+        recent_profit_stats ps ON wp.wallet_address = ps.wallet_address
+    WHERE 
+        dwa.is_whale = TRUE
+   --     AND dwa.status = 'ACTIVE'
+),
+-- 30天排名
+monthly_profit_ranks AS (
+    SELECT 
+        CURRENT_DATE AS snapshot_date,
+        wp.wallet_address,
+        CAST('30DAYS' AS VARCHAR(10)) AS rank_timerange,
+        dwa.whale_type,
+        wp.total_profit_eth,
+        wp.total_profit_usd,
+        CAST(wp.total_tx_count AS INT) AS total_tx_count,
+        dwa.first_track_date,
+        TIMESTAMPDIFF(DAY, dwa.first_track_date, CURRENT_DATE) AS tracking_days,
+        wp.influence_score,
+        CAST(ROW_NUMBER() OVER (ORDER BY ps.profit_30d_eth DESC) AS INT) AS rank_num
+    FROM 
+        whale_profit_data wp
+    JOIN 
+        dim.dim_whale_address dwa ON wp.wallet_address = dwa.wallet_address
+    JOIN
+        recent_profit_stats ps ON wp.wallet_address = ps.wallet_address
+    WHERE 
+        dwa.is_whale = TRUE
+  --      AND dwa.status = 'ACTIVE'
+),
+-- 合并所有排名
+all_ranks AS (
+    SELECT * FROM daily_profit_ranks
+    UNION ALL
+    SELECT * FROM weekly_profit_ranks
+    UNION ALL
+    SELECT * FROM monthly_profit_ranks
 )
 SELECT 
     r.snapshot_date,
     r.wallet_address,
-    r.rank_num,
+    CAST(r.rank_timerange AS VARCHAR(10)) AS rank_timerange,
+    CAST(r.rank_num AS INT) AS rank_num,
     CASE 
         WHEN r.whale_type = 'SMART' THEN 'Smart Whale'
         WHEN r.whale_type = 'DUMB' THEN 'Dumb Whale'
@@ -187,13 +248,13 @@ SELECT
     r.first_track_date,
     CAST(r.tracking_days AS INT) AS tracking_days,
     CAST(r.influence_score AS DECIMAL(10,2)) AS influence_score,
-    'dws_whale_daily_stats,dwd_whale_transaction_detail' AS data_source,
+    CAST('dws_whale_daily_stats' AS VARCHAR(100)) AS data_source,
     CURRENT_TIMESTAMP AS etl_time
 FROM 
-    profit_ranks r
+    all_ranks r
 LEFT JOIN 
     recent_profit_stats ps ON r.wallet_address = ps.wallet_address
-LEFT JOIN 
+LEFT JOIN
     top_collection_profits bc ON r.wallet_address = bc.wallet_address
 WHERE 
     r.rank_num <= 10; 

@@ -34,3 +34,4 @@ src/main/java/org/bigdatatechcir/whale/warehouse/flink/paimon/ods/data/*.json
 src/main/java/org/bigdatatechcir/whale/warehouse/flink/paimon/ods/sql/collection_transaction_inc/*.sql
 src/main/java/org/bigdatatechcir/whale/warehouse/flink/paimon/ods/sql/*.sql
 
+NFT-Project/*

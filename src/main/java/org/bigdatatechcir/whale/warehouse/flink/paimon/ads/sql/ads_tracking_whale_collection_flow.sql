@@ -40,7 +40,9 @@ CREATE TABLE IF NOT EXISTS ads_tracking_whale_collection_flow (
     snapshot_date DATE,
     collection_address VARCHAR(255),
     collection_name VARCHAR(255),
+    logo_url VARCHAR(500),                           -- 收藏集logo URL
     flow_direction VARCHAR(20),
+    rank_timerange VARCHAR(10),    -- 新增字段，表示排名周期：DAY, 7DAYS, 30DAYS
     rank_num INT,
     net_flow_eth DECIMAL(30,10),
     net_flow_usd DECIMAL(30,10),
@@ -56,7 +58,7 @@ CREATE TABLE IF NOT EXISTS ads_tracking_whale_collection_flow (
     trend_indicator VARCHAR(50),
     data_source VARCHAR(100),
     etl_time TIMESTAMP,
-    PRIMARY KEY (snapshot_date, collection_address, flow_direction) NOT ENFORCED
+    PRIMARY KEY (snapshot_date, collection_address, flow_direction, rank_timerange) NOT ENFORCED
 ) WITH (
     'bucket' = '4',
     'bucket-key' = 'collection_address',
@@ -68,9 +70,17 @@ CREATE TABLE IF NOT EXISTS ads_tracking_whale_collection_flow (
     'compaction.target-file-size' = '128MB'
 );
 
--- 计算并更新工作集收藏集中鲸鱼净流入/流出Top10
+-- 插入所有时间范围的排名数据
 INSERT INTO ads_tracking_whale_collection_flow
-WITH historical_flows AS (
+WITH collection_logo_info AS (
+    -- 获取收藏集Logo信息
+    SELECT 
+        collection_address,
+        logo_url
+    FROM 
+        dim.dim_collection_info
+),
+historical_flows AS (
     -- 计算各收藏集历史累计流量(7日和30日)
     SELECT 
         cf.collection_address,
@@ -130,12 +140,14 @@ current_day_stats AS (
     GROUP BY 
         cf.collection_address
 ),
-inflow_collections AS (
+-- 当日净流入排名
+daily_inflow_collections AS (
     -- 计算净流入Top10
     SELECT 
         cds.collection_address,
         cds.collection_name,
         'INFLOW' AS flow_direction,
+        'DAY' AS rank_timerange,
         CAST(ROW_NUMBER() OVER (ORDER BY cds.net_flow_eth DESC) AS INT) AS rank_num,
         cds.net_flow_eth,
         cds.net_flow_eth * 2500.00 AS net_flow_usd, -- 示例USD汇率
@@ -150,12 +162,14 @@ inflow_collections AS (
     WHERE 
         cds.net_flow_eth > 0
 ),
-outflow_collections AS (
+-- 当日净流出排名
+daily_outflow_collections AS (
     -- 计算净流出Top10
     SELECT 
         cds.collection_address,
         cds.collection_name,
         'OUTFLOW' AS flow_direction,
+        'DAY' AS rank_timerange,
         CAST(ROW_NUMBER() OVER (ORDER BY cds.net_flow_eth ASC) AS INT) AS rank_num,
         cds.net_flow_eth,
         cds.net_flow_eth * 2500.00 AS net_flow_usd, -- 示例USD汇率
@@ -169,24 +183,158 @@ outflow_collections AS (
         current_day_stats cds
     WHERE 
         cds.net_flow_eth < 0
+),
+-- 7天净流入排名
+weekly_inflow_collections AS (
+    SELECT 
+        hf.collection_address,
+        cds.collection_name,
+        CAST('INFLOW' AS VARCHAR(10)) AS flow_direction,
+        CAST('7DAYS' AS VARCHAR(10)) AS rank_timerange,
+        CAST(ROW_NUMBER() OVER (ORDER BY hf.net_flow_7d_eth DESC) AS INT) AS rank_num,
+        hf.net_flow_7d_eth AS net_flow_eth,
+        hf.net_flow_7d_eth * 2500.00 AS net_flow_usd,
+        cds.floor_price_eth,
+        cds.floor_price_change_1d,
+        CAST(cds.unique_whale_buyers AS INT) AS unique_whale_buyers,
+        CAST(cds.unique_whale_sellers AS INT) AS unique_whale_sellers,
+        cds.whale_trading_percentage,
+        CASE 
+            WHEN hf.net_flow_7d_eth > 30 THEN 'STRONG_INFLOW'
+            WHEN hf.net_flow_7d_eth > 15 THEN 'MODERATE_INFLOW'
+            ELSE 'SLIGHT_INFLOW'
+        END AS trend_indicator
+    FROM 
+        historical_flows hf
+    JOIN 
+        current_day_stats cds ON hf.collection_address = cds.collection_address
+    WHERE 
+        -- 修改筛选条件，取前10名流入
+        hf.net_flow_7d_eth > 0
+    ORDER BY hf.net_flow_7d_eth DESC
+    LIMIT 10
+),
+-- 7天净流出排名
+weekly_outflow_collections AS (
+    SELECT 
+        hf.collection_address,
+        cds.collection_name,
+        CAST('OUTFLOW' AS VARCHAR(10)) AS flow_direction,
+        CAST('7DAYS' AS VARCHAR(10)) AS rank_timerange,
+        CAST(ROW_NUMBER() OVER (ORDER BY hf.net_flow_7d_eth ASC) AS INT) AS rank_num,
+        hf.net_flow_7d_eth AS net_flow_eth,
+        hf.net_flow_7d_eth * 2500.00 AS net_flow_usd,
+        cds.floor_price_eth,
+        cds.floor_price_change_1d,
+        CAST(cds.unique_whale_buyers AS INT) AS unique_whale_buyers,
+        CAST(cds.unique_whale_sellers AS INT) AS unique_whale_sellers,
+        cds.whale_trading_percentage,
+        CASE 
+            WHEN hf.net_flow_7d_eth < -30 THEN 'STRONG_OUTFLOW'
+            WHEN hf.net_flow_7d_eth < -15 THEN 'MODERATE_OUTFLOW'
+            ELSE 'SLIGHT_OUTFLOW'
+        END AS trend_indicator
+    FROM 
+        historical_flows hf
+    JOIN 
+        current_day_stats cds ON hf.collection_address = cds.collection_address
+    WHERE 
+        -- 修改筛选条件，取前10名流出
+        hf.net_flow_7d_eth < 0
+    ORDER BY hf.net_flow_7d_eth ASC
+    LIMIT 10
+),
+-- 30天净流入排名
+monthly_inflow_collections AS (
+    SELECT 
+        hf.collection_address,
+        cds.collection_name,
+        CAST('INFLOW' AS VARCHAR(10)) AS flow_direction,
+        CAST('30DAYS' AS VARCHAR(10)) AS rank_timerange,
+        CAST(ROW_NUMBER() OVER (ORDER BY hf.net_flow_30d_eth DESC) AS INT) AS rank_num,
+        hf.net_flow_30d_eth AS net_flow_eth,
+        hf.net_flow_30d_eth * 2500.00 AS net_flow_usd,
+        cds.floor_price_eth,
+        cds.floor_price_change_1d,
+        CAST(cds.unique_whale_buyers AS INT) AS unique_whale_buyers,
+        CAST(cds.unique_whale_sellers AS INT) AS unique_whale_sellers,
+        cds.whale_trading_percentage,
+        CASE 
+            WHEN hf.net_flow_30d_eth > 50 THEN 'STRONG_INFLOW'
+            WHEN hf.net_flow_30d_eth > 25 THEN 'MODERATE_INFLOW'
+            ELSE 'SLIGHT_INFLOW'
+        END AS trend_indicator
+    FROM 
+        historical_flows hf
+    JOIN 
+        current_day_stats cds ON hf.collection_address = cds.collection_address
+    WHERE 
+        -- 修改筛选条件，取前10名流入
+        hf.net_flow_30d_eth > 0
+    ORDER BY hf.net_flow_30d_eth DESC
+    LIMIT 10
+),
+-- 30天净流出排名
+monthly_outflow_collections AS (
+    SELECT 
+        hf.collection_address,
+        cds.collection_name,
+        CAST('OUTFLOW' AS VARCHAR(10)) AS flow_direction,
+        CAST('30DAYS' AS VARCHAR(10)) AS rank_timerange,
+        CAST(ROW_NUMBER() OVER (ORDER BY hf.net_flow_30d_eth ASC) AS INT) AS rank_num,
+        hf.net_flow_30d_eth AS net_flow_eth,
+        hf.net_flow_30d_eth * 2500.00 AS net_flow_usd,
+        cds.floor_price_eth,
+        cds.floor_price_change_1d,
+        CAST(cds.unique_whale_buyers AS INT) AS unique_whale_buyers,
+        CAST(cds.unique_whale_sellers AS INT) AS unique_whale_sellers,
+        cds.whale_trading_percentage,
+        CASE 
+            WHEN hf.net_flow_30d_eth < -50 THEN 'STRONG_OUTFLOW'
+            WHEN hf.net_flow_30d_eth < -25 THEN 'MODERATE_OUTFLOW'
+            ELSE 'SLIGHT_OUTFLOW'
+        END AS trend_indicator
+    FROM 
+        historical_flows hf
+    JOIN 
+        current_day_stats cds ON hf.collection_address = cds.collection_address
+    WHERE 
+        -- 修改筛选条件，取前10名流出
+        hf.net_flow_30d_eth < 0
+    ORDER BY hf.net_flow_30d_eth ASC
+    LIMIT 10
+),
+-- 合并所有排名
+all_collections AS (
+    SELECT * FROM daily_inflow_collections
+    UNION ALL
+    SELECT * FROM daily_outflow_collections
+    UNION ALL
+    SELECT * FROM weekly_inflow_collections
+    UNION ALL
+    SELECT * FROM weekly_outflow_collections
+    UNION ALL
+    SELECT * FROM monthly_inflow_collections
+    UNION ALL
+    SELECT * FROM monthly_outflow_collections
 )
-
--- 净流入Top10
 SELECT 
     CURRENT_DATE AS snapshot_date,
-    ic.collection_address,
-    ic.collection_name,
-    ic.flow_direction,
-    ic.rank_num,
-    ic.net_flow_eth,
-    ic.net_flow_usd,
+    c.collection_address,
+    c.collection_name,
+    cli.logo_url,
+    CAST(c.flow_direction AS VARCHAR(10)) AS flow_direction,
+    CAST(c.rank_timerange AS VARCHAR(10)) AS rank_timerange,
+    c.rank_num,
+    c.net_flow_eth,
+    c.net_flow_usd,
     COALESCE(hf.net_flow_7d_eth, CAST(0 AS DECIMAL(30,10))) AS net_flow_7d_eth,
     COALESCE(hf.net_flow_30d_eth, CAST(0 AS DECIMAL(30,10))) AS net_flow_30d_eth,
-    ic.floor_price_eth,
-    ic.floor_price_change_1d,
-    ic.unique_whale_buyers,
-    ic.unique_whale_sellers,
-    ic.whale_trading_percentage,
+    c.floor_price_eth,
+    c.floor_price_change_1d,
+    c.unique_whale_buyers,
+    c.unique_whale_sellers,
+    c.whale_trading_percentage,
     CASE 
         WHEN wts.total_whale_volume > 0 
         THEN CAST((COALESCE(wts.smart_whale_volume, 0) / wts.total_whale_volume) * 100 AS DECIMAL(10,2))
@@ -197,54 +345,16 @@ SELECT
         THEN CAST((COALESCE(wts.dumb_whale_volume, 0) / wts.total_whale_volume) * 100 AS DECIMAL(10,2))
         ELSE CAST(0 AS DECIMAL(10,2))
     END AS dumb_whale_percentage,
-    ic.trend_indicator,
-    'dws_collection_whale_flow,dim_whale_address' AS data_source,
+    c.trend_indicator,
+    CAST('dws_collection_whale_flow,dim_whale_address,dim_collection_info' AS VARCHAR(100)) AS data_source,
     CURRENT_TIMESTAMP AS etl_time
 FROM 
-    inflow_collections ic
+    all_collections c
+LEFT JOIN 
+    historical_flows hf ON c.collection_address = hf.collection_address
+LEFT JOIN 
+    whale_type_stats wts ON c.collection_address = wts.collection_address
 LEFT JOIN
-    historical_flows hf ON ic.collection_address = hf.collection_address
-LEFT JOIN
-    whale_type_stats wts ON ic.collection_address = wts.collection_address
+    collection_logo_info cli ON c.collection_address = cli.collection_address
 WHERE 
-    ic.rank_num <= 10
-
-UNION ALL
-
--- 净流出Top10
-SELECT 
-    CURRENT_DATE AS snapshot_date,
-    oc.collection_address,
-    oc.collection_name,
-    oc.flow_direction,
-    oc.rank_num,
-    oc.net_flow_eth,
-    oc.net_flow_usd,
-    COALESCE(hf.net_flow_7d_eth, CAST(0 AS DECIMAL(30,10))) AS net_flow_7d_eth,
-    COALESCE(hf.net_flow_30d_eth, CAST(0 AS DECIMAL(30,10))) AS net_flow_30d_eth,
-    oc.floor_price_eth,
-    oc.floor_price_change_1d,
-    oc.unique_whale_buyers,
-    oc.unique_whale_sellers,
-    oc.whale_trading_percentage,
-    CASE 
-        WHEN wts.total_whale_volume > 0 
-        THEN CAST((COALESCE(wts.smart_whale_volume, 0) / wts.total_whale_volume) * 100 AS DECIMAL(10,2))
-        ELSE CAST(0 AS DECIMAL(10,2))
-    END AS smart_whale_percentage,
-    CASE 
-        WHEN wts.total_whale_volume > 0 
-        THEN CAST((COALESCE(wts.dumb_whale_volume, 0) / wts.total_whale_volume) * 100 AS DECIMAL(10,2))
-        ELSE CAST(0 AS DECIMAL(10,2))
-    END AS dumb_whale_percentage,
-    oc.trend_indicator,
-    'dws_collection_whale_flow,dim_whale_address' AS data_source,
-    CURRENT_TIMESTAMP AS etl_time
-FROM 
-    outflow_collections oc
-LEFT JOIN
-    historical_flows hf ON oc.collection_address = hf.collection_address
-LEFT JOIN
-    whale_type_stats wts ON oc.collection_address = wts.collection_address
-WHERE 
-    oc.rank_num <= 10; 
+    c.rank_num <= 10; 

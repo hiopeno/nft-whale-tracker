@@ -39,6 +39,7 @@ USE ads;
 CREATE TABLE IF NOT EXISTS ads_top_roi_whales (
     snapshot_date DATE,
     wallet_address VARCHAR(255),
+    rank_timerange VARCHAR(10),    -- 新增字段，表示排名周期：DAY, 7DAYS, 30DAYS
     rank_num INT,
     wallet_tag VARCHAR(255),
     roi_percentage DECIMAL(10,2),
@@ -54,7 +55,7 @@ CREATE TABLE IF NOT EXISTS ads_top_roi_whales (
     influence_score DECIMAL(10,2),
     data_source VARCHAR(100),
     etl_time TIMESTAMP,
-    PRIMARY KEY (snapshot_date, wallet_address) NOT ENFORCED
+    PRIMARY KEY (snapshot_date, wallet_address, rank_timerange) NOT ENFORCED
 ) WITH (
     'bucket' = '4',
     'bucket-key' = 'wallet_address',
@@ -66,7 +67,8 @@ CREATE TABLE IF NOT EXISTS ads_top_roi_whales (
     'compaction.target-file-size' = '128MB'
 );
 
--- 计算并更新收益率Top10鲸鱼钱包
+-- 计算并更新收益率Top10鲸鱼钱包 - 基本数据CTE
+-- 插入所有时间范围的排名数据
 INSERT INTO ads_top_roi_whales
 WITH whale_data AS (
     -- 从DWS获取鲸鱼信息和精确计算的ROI
@@ -83,28 +85,6 @@ WITH whale_data AS (
         dws.dws_whale_daily_stats
     GROUP BY 
         wallet_address
-),
-roi_ranks AS (
-    SELECT 
-        CURRENT_DATE AS snapshot_date,
-        wd.wallet_address,
-        dwa.whale_type,
-        wd.roi_percentage,
-        wd.total_buy_volume_eth,
-        wd.total_sell_volume_eth,
-        wd.total_profit_eth,
-        dwa.first_track_date,
-        wd.influence_score,
-        wd.avg_hold_days,
-        ROW_NUMBER() OVER (ORDER BY wd.roi_percentage DESC) AS rank_num
-    FROM 
-        whale_data wd
-    JOIN 
-        dim.dim_whale_address dwa ON wd.wallet_address = dwa.wallet_address
-    WHERE 
-        dwa.is_whale = TRUE
-        AND dwa.status = 'ACTIVE'
-        AND wd.total_buy_volume_eth > 0  -- 确保有有效的ROI计算
 ),
 recent_roi AS (
     -- 计算近期ROI - 使用精确的NFT买卖配对计算
@@ -197,20 +177,106 @@ best_collection_roi AS (
         dim.dim_collection_info c ON cr.contract_address = c.collection_address
     WHERE 
         cr.roi_rank = 1
+),
+-- 每日排名
+daily_roi_ranks AS (
+    SELECT 
+        CURRENT_DATE AS snapshot_date,
+        wd.wallet_address,
+        'DAY' AS rank_timerange,
+        dwa.whale_type,
+        wd.roi_percentage,
+        wd.total_buy_volume_eth,
+        wd.total_sell_volume_eth,
+        wd.total_profit_eth,
+        dwa.first_track_date,
+        wd.influence_score,
+        wd.avg_hold_days,
+        CAST(ROW_NUMBER() OVER (ORDER BY wd.roi_percentage DESC) AS INT) AS rank_num
+    FROM 
+        whale_data wd
+    JOIN 
+        dim.dim_whale_address dwa ON wd.wallet_address = dwa.wallet_address
+    WHERE 
+        dwa.is_whale = TRUE
+   --     AND dwa.status = 'ACTIVE'
+        AND wd.total_buy_volume_eth > 0  -- 确保有有效的ROI计算
+),
+-- 7天排名
+weekly_roi_ranks AS (
+    SELECT 
+        CURRENT_DATE AS snapshot_date,
+        wd.wallet_address,
+        CAST('7DAYS' AS VARCHAR(10)) AS rank_timerange,
+        dwa.whale_type,
+        wd.roi_percentage,
+        wd.total_buy_volume_eth,
+        wd.total_sell_volume_eth,
+        wd.total_profit_eth,
+        dwa.first_track_date,
+        wd.influence_score,
+        wd.avg_hold_days,
+        CAST(ROW_NUMBER() OVER (ORDER BY rr.roi_7d_percentage DESC) AS INT) AS rank_num
+    FROM 
+        whale_data wd
+    JOIN 
+        dim.dim_whale_address dwa ON wd.wallet_address = dwa.wallet_address
+    JOIN 
+        recent_roi rr ON wd.wallet_address = rr.wallet_address
+    WHERE 
+        dwa.is_whale = TRUE
+ --       AND dwa.status = 'ACTIVE'
+        AND wd.total_buy_volume_eth > 0
+),
+-- 30天排名
+monthly_roi_ranks AS (
+    SELECT 
+        CURRENT_DATE AS snapshot_date,
+        wd.wallet_address,
+        CAST('30DAYS' AS VARCHAR(10)) AS rank_timerange,
+        dwa.whale_type,
+        wd.roi_percentage,
+        wd.total_buy_volume_eth,
+        wd.total_sell_volume_eth,
+        wd.total_profit_eth,
+        dwa.first_track_date,
+        wd.influence_score,
+        wd.avg_hold_days,
+        CAST(ROW_NUMBER() OVER (ORDER BY rr.roi_30d_percentage DESC) AS INT) AS rank_num
+    FROM 
+        whale_data wd
+    JOIN 
+        dim.dim_whale_address dwa ON wd.wallet_address = dwa.wallet_address
+    JOIN 
+        recent_roi rr ON wd.wallet_address = rr.wallet_address
+    WHERE 
+        dwa.is_whale = TRUE
+    --    AND dwa.status = 'ACTIVE'
+        AND wd.total_buy_volume_eth > 0
+),
+-- 合并所有排名
+all_ranks AS (
+    SELECT * FROM daily_roi_ranks
+    UNION ALL
+    SELECT * FROM weekly_roi_ranks
+    UNION ALL
+    SELECT * FROM monthly_roi_ranks
 )
+-- 插入最终结果
 SELECT 
     r.snapshot_date,
     r.wallet_address,
+    CAST(r.rank_timerange AS VARCHAR(10)) AS rank_timerange,
     CAST(r.rank_num AS INT) AS rank_num,
     CASE 
         WHEN r.whale_type = 'SMART' THEN 'Smart Whale'
         WHEN r.whale_type = 'DUMB' THEN 'Dumb Whale'
         ELSE 'Tracking Whale'
     END AS wallet_tag,
-    r.roi_percentage,
-    r.total_buy_volume_eth,
-    r.total_sell_volume_eth,
-    r.total_profit_eth,
+    CAST(r.roi_percentage AS DECIMAL(10,2)) AS roi_percentage,
+    CAST(r.total_buy_volume_eth AS DECIMAL(30,10)) AS total_buy_volume_eth,
+    CAST(r.total_sell_volume_eth AS DECIMAL(30,10)) AS total_sell_volume_eth,
+    CAST(r.total_profit_eth AS DECIMAL(30,10)) AS total_profit_eth,
     CAST(COALESCE(rr.roi_7d_percentage, 0) AS DECIMAL(10,2)) AS roi_7d_percentage,
     CAST(COALESCE(rr.roi_30d_percentage, 0) AS DECIMAL(10,2)) AS roi_30d_percentage,
     COALESCE(bc.best_collection_roi, 'Unknown') AS best_collection_roi,
@@ -218,13 +284,13 @@ SELECT
     CAST(r.avg_hold_days AS DECIMAL(10,2)) AS avg_hold_days,
     r.first_track_date,
     CAST(r.influence_score AS DECIMAL(10,2)) AS influence_score,
-    'dws_whale_daily_stats,dwd_whale_transaction_detail' AS data_source,
+    CAST('dws_whale_daily_stats' AS VARCHAR(100)) AS data_source,
     CURRENT_TIMESTAMP AS etl_time
 FROM 
-    roi_ranks r
+    all_ranks r
 LEFT JOIN 
     recent_roi rr ON r.wallet_address = rr.wallet_address
-LEFT JOIN 
+LEFT JOIN
     best_collection_roi bc ON r.wallet_address = bc.wallet_address
 WHERE 
     r.rank_num <= 10; 

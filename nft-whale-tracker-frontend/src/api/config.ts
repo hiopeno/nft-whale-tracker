@@ -10,7 +10,7 @@ const API_BASE_URL = process.env.NODE_ENV === 'production'
 // WebSocket基础URL
 const WS_BASE_URL = process.env.NODE_ENV === 'production'
   ? '/ws' // 生产环境下使用相对路径
-  : 'ws://localhost:8080/ws'; // 开发环境直接连接后端WebSocket
+  : 'ws://localhost:8886/ws'; // 开发环境直接连接后端WebSocket
 
 // API版本
 const API_VERSION = '/api';
@@ -19,12 +19,12 @@ const API_VERSION = '/api';
 const API_ENDPOINTS = {
   // 鲸鱼追踪相关
   whaleTracking: {
-    stats: `/whale-tracking/stats`,
-    transactions: `/whale-tracking/transactions`,
-    collectionFlow: `/whale-tracking/collection-flow`,
-    volumeAnalysis: `/whale-tracking/volume-analysis`,
-    profitAnalysis: `/whale-tracking/profit-analysis`,
-    wallet: (address: string) => `/whale-tracking/wallet/${address}`,
+    stats: `/whale-tracking/test-connection`, // 获取连接状态和基本统计
+    transactions: `/whale-tracking/transactions`, // 获取鲸鱼交易数据
+    collectionFlow: `/data/query/dws/dws_collection_whale_flow`, // 收藏集流向数据
+    volumeAnalysis: `/data/query/dws/dws_whale_daily_stats`, // 鲸鱼交易额分析
+    profitAnalysis: `/data/query/ads/ads_top_profit_whales`, // 鲸鱼收益分析
+    wallet: (address: string) => `/data/query/dim/dim_whale_address?limit=1&filter=wallet_address='${address}'`, // 钱包信息
   },
   
   // WebSocket相关

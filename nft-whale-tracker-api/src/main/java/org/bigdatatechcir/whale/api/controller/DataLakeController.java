@@ -82,7 +82,7 @@ public class DataLakeController {
     public ResponseEntity<?> queryTableData(
             @PathVariable String database,
             @PathVariable String table,
-            @RequestParam(defaultValue = "10") int limit) {
+            @RequestParam(defaultValue = "1000") int limit) {
         log.debug("请求查询表数据: database={}, table={}, limit={}", database, table, limit);
         
         try {
@@ -107,7 +107,7 @@ public class DataLakeController {
      * 获取鲸鱼交易列表数据
      */
     @GetMapping("/whale/transactions")
-    public ResponseEntity<?> getWhaleTransactions(@RequestParam(defaultValue = "10") int limit) {
+    public ResponseEntity<?> getWhaleTransactions(@RequestParam(defaultValue = "1000") int limit) {
         log.debug("请求获取鲸鱼交易列表，条数: {}", limit);
         try {
             List<Map<String, Object>> transactions = dataLakeService.getWhaleTransactions(limit);
@@ -124,7 +124,7 @@ public class DataLakeController {
      * 获取鲸鱼跟踪列表
      */
     @GetMapping("/whale/tracking")
-    public ResponseEntity<?> getWhaleTrackingList(@RequestParam(defaultValue = "10") int limit) {
+    public ResponseEntity<?> getWhaleTrackingList(@RequestParam(defaultValue = "1000") int limit) {
         log.debug("请求获取鲸鱼跟踪列表，条数: {}", limit);
         try {
             List<Map<String, Object>> trackingList = dataLakeService.getWhaleTrackingList(limit);

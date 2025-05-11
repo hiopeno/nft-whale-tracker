@@ -1,41 +1,44 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Card, Row, Col, Statistic, Table, Tag, Typography, Badge, Spin, List, Avatar, Divider, Modal, Space, Button, Radio, Tooltip, Select } from 'antd';
-import { 
-  ArrowUpOutlined, 
-  ArrowDownOutlined, 
-  UserOutlined, 
-  SyncOutlined, 
-  SwapOutlined, 
-  FireOutlined, 
-  AreaChartOutlined, 
-  BarChartOutlined, 
-  WalletOutlined, 
-  PieChartOutlined, 
-  AlertOutlined, 
-  TransactionOutlined, 
-  DollarOutlined, 
-  HistoryOutlined, 
-  PlusOutlined, 
-  MinusOutlined, 
-  CrownOutlined, 
-  ThunderboltOutlined, 
-  QuestionOutlined, 
-  BulbOutlined, 
-  SmileOutlined, 
-  StarOutlined, 
+import { Card, Row, Col, Statistic, Table, Tag, Typography, Badge, Spin, List, Avatar, Divider, Modal, Space, Button, Radio, Tooltip, Select, message } from 'antd';
+import {
+  ArrowUpOutlined,
+  ArrowDownOutlined,
+  UserOutlined,
+  SyncOutlined,
+  SwapOutlined,
+  FireOutlined,
+  AreaChartOutlined,
+  BarChartOutlined,
+  WalletOutlined,
+  PieChartOutlined,
+  AlertOutlined,
+  TransactionOutlined,
+  DollarOutlined,
+  HistoryOutlined,
+  PlusOutlined,
+  MinusOutlined,
+  CrownOutlined,
+  ThunderboltOutlined,
+  QuestionOutlined,
+  BulbOutlined,
+  SmileOutlined,
+  StarOutlined,
   StarFilled,
   SwapRightOutlined,
   CaretDownOutlined
 } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts/core';
+import axios from 'axios';
+import { API_ENDPOINTS } from '../../api/config';
+import { dataLakeApi } from '../../api/api';
 
 const { Title, Text } = Typography;
 
 // 科技风格标题组件
-const TechTitle: React.FC<{children: React.ReactNode}> = ({ children }) => (
-  <Title 
-    level={2} 
+const TechTitle: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <Title
+    level={2}
     className="tech-page-title"
   >
     {children}
@@ -45,15 +48,15 @@ const TechTitle: React.FC<{children: React.ReactNode}> = ({ children }) => (
 // 数据加载动画组件
 const TechLoading: React.FC = () => (
   <div style={{ textAlign: 'center', padding: 20 }}>
-    <Spin 
-      indicator={<SyncOutlined spin style={{ fontSize: 24, color: '#1890ff' }} />} 
+    <Spin
+      indicator={<SyncOutlined spin style={{ fontSize: 24, color: '#1890ff' }} />}
       tip={<Text style={{ color: 'rgba(255, 255, 255, 0.65)' }}>加载数据中...</Text>}
     />
   </div>
 );
 
 // 科技风格标签组件
-const TechTag: React.FC<{level: string}> = ({ level }) => {
+const TechTag: React.FC<{ level: string }> = ({ level }) => {
   let tagProps = {
     className: 'neutral-tag',
     text: '普通',
@@ -81,7 +84,7 @@ const TechTag: React.FC<{level: string}> = ({ level }) => {
   }
 
   return (
-    <Tag 
+    <Tag
       className={tagProps.className}
       icon={tagProps.icon}
     >
@@ -91,16 +94,16 @@ const TechTag: React.FC<{level: string}> = ({ level }) => {
 };
 
 // 自定义持仓变化组件
-const HoldingChange: React.FC<{value: number}> = ({ value }) => {
+const HoldingChange: React.FC<{ value: number }> = ({ value }) => {
   if (value > 0) {
     return (
       <Statistic
         value={value}
         precision={0}
         prefix={<ArrowUpOutlined />}
-        valueStyle={{ 
-          color: 'var(--success)', 
-          fontSize: 16, 
+        valueStyle={{
+          color: 'var(--success)',
+          fontSize: 16,
           textShadow: 'var(--text-shadow-success)'
         }}
         suffix="$"
@@ -112,9 +115,9 @@ const HoldingChange: React.FC<{value: number}> = ({ value }) => {
         value={Math.abs(value)} // 显示绝对值
         precision={0}
         prefix={<ArrowDownOutlined />}
-        valueStyle={{ 
-          color: 'var(--danger)', 
-          fontSize: 16, 
+        valueStyle={{
+          color: 'var(--danger)',
+          fontSize: 16,
           textShadow: 'var(--text-shadow-danger)'
         }}
         suffix="$"
@@ -125,9 +128,9 @@ const HoldingChange: React.FC<{value: number}> = ({ value }) => {
       <Statistic
         value={0}
         prefix={<SwapOutlined />}
-        valueStyle={{ 
-          color: 'var(--neutral)', 
-          fontSize: 16, 
+        valueStyle={{
+          color: 'var(--neutral)',
+          fontSize: 16,
           textShadow: 'var(--text-shadow-subtle)'
         }}
         suffix="$"
@@ -139,6 +142,8 @@ const HoldingChange: React.FC<{value: number}> = ({ value }) => {
 // LiveTransactionStream组件外部定义常量
 const ACTION_TAGS = [
   { value: 'all', label: '全部', color: '#1890ff' },
+  { value: 'whale_only', label: '仅鲸鱼', color: '#f5222d' },
+  { value: 'normal', label: '非鲸鱼', color: '#a9a9a9' },
   { value: 'accumulate', label: '积累', color: '#52c41a' },
   { value: 'dump', label: '抛售', color: '#f5222d' },
   { value: 'flip', label: '短炒', color: '#faad14' },
@@ -158,6 +163,86 @@ const TIME_OPTIONS = [
   { value: '12hours', label: '十二小时内' }
 ] as const;
 
+// 函数：将ads_whale_transactions数据转换为前端所需的交易数据格式
+const transformWhaleTransactions = (rawData: any[]): any[] => {
+  if (!rawData || !Array.isArray(rawData) || rawData.length === 0) {
+    return [];
+  }
+  
+  return rawData.map((item, index) => {
+    // 确定鲸鱼类型和方向
+    const fromIsWhale = item.from_whale_type !== 'NO_WHALE';
+    const toIsWhale = item.to_whale_type !== 'NO_WHALE';
+    const isWhale = fromIsWhale || toIsWhale;
+    
+    // 判断交易行为类型
+    let actionType = 'explore';
+    if (fromIsWhale && toIsWhale) {
+      actionType = 'flip'; // 鲸鱼之间交易
+    } else if (toIsWhale && !fromIsWhale) {
+      actionType = 'accumulate'; // 鲸鱼买入
+    } else if (fromIsWhale && !toIsWhale) {
+      actionType = 'dump'; // 鲸鱼卖出
+    }
+    
+    // 计算交易时间文本
+    const txTime = new Date(item.tx_timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - txTime.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    
+    let timeText = '';
+    if (diffMins < 1) {
+      timeText = '刚刚';
+    } else if (diffMins < 60) {
+      timeText = `${diffMins}分钟前`;
+    } else {
+      timeText = `${diffHours}小时${diffMins % 60 > 0 ? diffMins % 60 + '分钟' : ''}前`;
+    }
+    
+    // NFT名称格式化
+    const tokenIdNum = parseInt(item.token_id);
+    const nftName = `${item.collection_name || 'Unknown'} #${!isNaN(tokenIdNum) ? tokenIdNum : item.token_id}`;
+    
+    // 地址格式化
+    const formatAddr = (addr: string) => {
+      if (!addr || addr.length < 10) return addr;
+      return `${addr.substring(0, 6)}...${addr.substring(addr.length - 4)}`;
+    };
+    
+    // 鲸鱼地址
+    const whaleAddress = toIsWhale ? item.to_address : (fromIsWhale ? item.from_address : '');
+    
+    // 价格变化计算 (如果有地板价，就计算与地板价的关系)
+    const priceChange = item.floor_price_eth && item.floor_price_eth > 0 
+      ? ((item.trade_price_eth / item.floor_price_eth - 1) * 100)
+      : 0;
+    
+    return {
+      id: `${item.tx_hash}-${index}`,
+      time: timeText,
+      nftName: nftName,
+      collection: item.collection_name || 'Unknown',
+      seller: formatAddr(item.from_address),
+      buyer: formatAddr(item.to_address),
+      price: Number(item.trade_price_eth) || 0,
+      priceChange: Number(priceChange.toFixed(1)),
+      rarityRank: Math.floor(Math.random() * 1000) + 1, // 模拟稀有度排名
+      whaleInfluence: toIsWhale ? Number(item.to_influence_score) : (fromIsWhale ? Number(item.from_influence_score) : 0),
+      actionType: actionType,
+      isWhale: isWhale,
+      whaleIsBuyer: toIsWhale,
+      whaleSeller: fromIsWhale,
+      whaleAddress: whaleAddress,
+      marketplace: item.marketplace,
+      logoUrl: item.logo_url, // 保留logo_url字段
+      // 保留原始数据以便需要时使用
+      rawData: item
+    };
+  });
+};
+
 // 实时交易流组件
 const LiveTransactionStream: React.FC = () => {
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -168,350 +253,60 @@ const LiveTransactionStream: React.FC = () => {
   const [selectedWalletAddress, setSelectedWalletAddress] = useState('');
   const [selectedWalletLabel, setSelectedWalletLabel] = useState('');
   const [hoveredItem, setHoveredItem] = useState<number | null>(null);
-  const [tagFilter, setTagFilter] = useState<string>('all');
+  const [tagFilter, setTagFilter] = useState<string>('whale_only'); // 默认设置为只显示鲸鱼交易
   const [timeFilter, setTimeFilter] = useState<string>('all');
+  const [loading, setLoading] = useState<boolean>(false);
+  const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null);
 
-  // 模拟交易数据
-  const sampleTransactions = [
-    {
-      id: '1',
-      time: '刚刚',
-      nftName: 'Bored Ape #5689',
-      collection: 'BAYC',
-      seller: '0x7823...45fa',
-      buyer: '0xa245...78de',
-      price: 72.5,
-      priceChange: +15.3, // 价格变化百分比
-      rarityRank: 226,    // 稀有度排名
-      whaleInfluence: 89,  // 鲸鱼影响力得分
-      actionType: 'accumulate', // 操作类型：积累
-      isWhale: true,
-      whaleIsBuyer: true, // 鲸鱼是买家
-      whaleSeller: false, // 鲸鱼不是卖家
-      whaleAddress: '0xa245...78de', // 哪个地址是鲸鱼
-    },
-    {
-      id: '2',
-      time: '2分钟前',
-      nftName: 'Azuki #2456',
-      collection: 'Azuki',
-      seller: '0x3467...12ab',
-      buyer: '0xf123...90cd',
-      price: 12.8,
-      priceChange: -3.7,
-      rarityRank: 1458,
-      whaleInfluence: 0,
-      actionType: 'explore',
-      isWhale: false,
-      whaleIsBuyer: false,
-      whaleSeller: false,
-      whaleAddress: '',
-    },
-    {
-      id: '3',
-      time: '5分钟前',
-      nftName: 'CryptoPunk #7804',
-      collection: 'CryptoPunks',
-      seller: '0xd678...34ef',
-      buyer: '0x5678...1234',
-      price: 83.2,
-      isWhale: true,
-      whaleIsBuyer: true,
-      whaleSeller: false,
-      whaleAddress: '0x5678...1234',
-    },
-    {
-      id: '4',
-      time: '8分钟前',
-      nftName: 'Doodle #8901',
-      collection: 'Doodles',
-      seller: '0x8765...4321',
-      buyer: '0x2345...6789',
-      price: 8.5,
-      isWhale: false,
-      whaleIsBuyer: false,
-      whaleSeller: false,
-      whaleAddress: '',
-    },
-    {
-      id: '5',
-      time: '12分钟前',
-      nftName: 'CloneX #3478',
-      collection: 'CloneX',
-      seller: '0x1234...5678',
-      buyer: '0x9012...3456',
-      price: 15.3,
-      isWhale: true,
-      whaleIsBuyer: false,
-      whaleSeller: true,
-      whaleAddress: '0x1234...5678',
-    },
-    // 新增15条鲸鱼交易数据
-    {
-      id: '9',
-      time: '15分钟前',
-      nftName: 'Otherdeed #7821',
-      collection: 'Otherdeeds',
-      seller: '0xab23...f456',
-      buyer: '0x7842...9e12',
-      price: 32.4,
-      isWhale: true,
-      whaleIsBuyer: true,
-      whaleSeller: false,
-      whaleAddress: '0x7842...9e12',
-    },
-    {
-      id: '10',
-      time: '18分钟前',
-      nftName: 'World of Women #3265',
-      collection: 'WoW',
-      seller: '0x2469...78ab',
-      buyer: '0xce34...df56',
-      price: 7.2,
-      isWhale: true,
-      whaleIsBuyer: false,
-      whaleSeller: true,
-      whaleAddress: '0x2469...78ab',
-    },
-    {
-      id: '11',
-      time: '22分钟前',
-      nftName: 'CyberKongz #435',
-      collection: 'CyberKongz',
-      seller: '0x8276...34ef',
-      buyer: '0x3694...12cd',
-      price: 14.8,
-      isWhale: true,
-      whaleIsBuyer: true,
-      whaleSeller: true,
-      whaleAddress: '0x8276...34ef', // 这里两个都是鲸鱼，标记卖家
-    },
-    {
-      id: '12',
-      time: '25分钟前',
-      nftName: 'Cool Cats #2176',
-      collection: 'Cool Cats',
-      seller: '0x9127...56gh',
-      buyer: '0x1498...23ab',
-      price: 5.1,
-      isWhale: true,
-      whaleIsBuyer: true,
-      whaleSeller: false,
-      whaleAddress: '0x1498...23ab',
-    },
-    {
-      id: '13',
-      time: '30分钟前',
-      nftName: 'Meebits #8932',
-      collection: 'Meebits',
-      seller: '0x6723...9f01',
-      buyer: '0x5678...1234',
-      price: 42.7,
-      isWhale: true,
-      whaleIsBuyer: true,
-      whaleSeller: false,
-      whaleAddress: '0x5678...1234',
-    },
-    {
-      id: '14',
-      time: '35分钟前',
-      nftName: 'BAYC #7652',
-      collection: 'BAYC',
-      seller: '0x1234...5678',
-      buyer: '0x3254...78ef',
-      price: 95.3,
-      isWhale: true,
-      whaleIsBuyer: false,
-      whaleSeller: true,
-      whaleAddress: '0x1234...5678',
-    },
-    {
-      id: '15',
-      time: '40分钟前',
-      nftName: 'Cryptoadz #563',
-      collection: 'Cryptoadz',
-      seller: '0x5431...ab78',
-      buyer: '0x7890...23cd',
-      price: 6.8,
-      isWhale: true,
-      whaleIsBuyer: true,
-      whaleSeller: false,
-      whaleAddress: '0x7890...23cd',
-    },
-    {
-      id: '16',
-      time: '45分钟前',
-      nftName: 'Azuki #9875',
-      collection: 'Azuki',
-      seller: '0xa245...78de',
-      buyer: '0xd785...12ef',
-      price: 16.2,
-      isWhale: true,
-      whaleIsBuyer: false,
-      whaleSeller: true,
-      whaleAddress: '0xa245...78de',
-    },
-    {
-      id: '17',
-      time: '50分钟前',
-      nftName: 'CloneX #2143',
-      collection: 'CloneX',
-      seller: '0x3426...90ab',
-      buyer: '0x8765...4321',
-      price: 18.7,
-      isWhale: true,
-      whaleIsBuyer: true,
-      whaleSeller: false,
-      whaleAddress: '0x8765...4321',
-    },
-    {
-      id: '18',
-      time: '52分钟前',
-      nftName: 'Doodles #1532',
-      collection: 'Doodles',
-      seller: '0x7842...9e12',
-      buyer: '0xab23...f456',
-      price: 9.4,
-      isWhale: true,
-      whaleIsBuyer: false,
-      whaleSeller: true,
-      whaleAddress: '0x7842...9e12',
-    },
-    {
-      id: '19',
-      time: '1小时前',
-      nftName: 'MAYC #4231',
-      collection: 'MAYC',
-      seller: '0xe987...12df',
-      buyer: '0x2469...78ab',
-      price: 28.5,
-      isWhale: true,
-      whaleIsBuyer: true,
-      whaleSeller: false,
-      whaleAddress: '0x2469...78ab',
-    },
-    {
-      id: '20',
-      time: '1小时5分钟前',
-      nftName: 'Pudgy Penguins #1893',
-      collection: 'Pudgy Penguins',
-      seller: '0x8276...34ef',
-      buyer: '0x9127...56gh',
-      price: 11.2,
-      isWhale: true,
-      whaleIsBuyer: true,
-      whaleSeller: true,
-      whaleAddress: '0x9127...56gh', // 买家是鲸鱼
-    },
-    {
-      id: '21',
-      time: '1小时10分钟前',
-      nftName: 'CryptoPunks #3214',
-      collection: 'CryptoPunks',
-      seller: '0x5678...1234',
-      buyer: '0x6723...9f01',
-      price: 110.5,
-      isWhale: true,
-      whaleIsBuyer: false,
-      whaleSeller: true,
-      whaleAddress: '0x5678...1234',
-    },
-    {
-      id: '22',
-      time: '1小时20分钟前',
-      nftName: 'Moonbirds #4328',
-      collection: 'Moonbirds',
-      seller: '0x3694...12cd',
-      buyer: '0x1498...23ab',
-      price: 23.7,
-      isWhale: true,
-      whaleIsBuyer: true,
-      whaleSeller: false,
-      whaleAddress: '0x1498...23ab',
-    },
-    {
-      id: '23',
-      time: '1小时30分钟前',
-      nftName: 'Goblintown #1267',
-      collection: 'Goblintown',
-      seller: '0x7890...23cd',
-      buyer: '0x1234...5678',
-      price: 3.2,
-      isWhale: true,
-      whaleIsBuyer: true,
-      whaleSeller: false,
-      whaleAddress: '0x1234...5678',
-    }
-  ];
-
-  // 初始化交易数据
-  useEffect(() => {
-    setTransactions(sampleTransactions);
-    // 初始化一些被追踪的鲸鱼地址
-    setTrackedWhales(['0x5678...1234', '0x1234...5678']);
-  }, []);
-
-  // 模拟定时添加新交易
-  useEffect(() => {
-    const newTransactions = [
-      {
-        id: '6',
-        time: '刚刚',
-        nftName: 'Mutant Ape #2341',
-        collection: 'MAYC',
-        seller: '0x5690...78ab',
-        buyer: '0x1234...5678', // 鲸鱼
-        price: 20.5,
-        isWhale: true,
-        whaleIsBuyer: true,
-        whaleSeller: false,
-        whaleAddress: '0x1234...5678',
-      },
-      {
-        id: '7',
-        time: '刚刚',
-        nftName: 'Moonbird #5673',
-        collection: 'Moonbirds',
-        seller: '0x8765...4321', // 鲸鱼
-        buyer: '0xc456...d789',
-        price: 10.2,
-        isWhale: true,
-        whaleIsBuyer: false,
-        whaleSeller: true,
-        whaleAddress: '0x8765...4321',
-      },
-      {
-        id: '8',
-        time: '刚刚',
-        nftName: 'Pudgy Penguin #671',
-        collection: 'Pudgy Penguins',
-        seller: '0xe987...12df',
-        buyer: '0x3426...90ab',
-        price: 4.7,
-        isWhale: false,
-        whaleIsBuyer: false,
-        whaleSeller: false,
-        whaleAddress: '',
-      },
-    ];
-
-    let index = 0;
-    const interval = setInterval(() => {
-      if (index < newTransactions.length) {
-        const newTransaction = newTransactions[index];
-        setTransactions(prev => {
-          const updated = [newTransaction, ...prev.slice(0, 4)];
-          return updated;
+  // 获取实际交易数据
+  const fetchTransactions = async () => {
+    try {
+      setLoading(true);
+      // 从数据湖获取ads_whale_transactions表数据，限制数量为200条
+      const response: any = await dataLakeApi.queryTableData('ads', 'ads_whale_transactions', 200);
+      
+      if (Array.isArray(response) && response.length > 0) {
+        console.log('获取到的原始交易数据:', response.length, '条');
+        
+        // 排序数据，确保最新的交易在前面
+        const sortedData = [...response].sort((a, b) => {
+          const dateA = new Date(a.tx_timestamp);
+          const dateB = new Date(b.tx_timestamp);
+          return dateB.getTime() - dateA.getTime();
         });
-        setIsNewItem(true);
-        setTimeout(() => setIsNewItem(false), 1000);
-        index++;
+        
+        // 转换数据格式
+        const transformedData = transformWhaleTransactions(sortedData);
+        
+        // 更新状态
+        setTransactions(transformedData);
+        setLastUpdateTime(new Date());
       } else {
-        clearInterval(interval);
+        console.warn('没有获取到交易数据或数据格式不正确');
       }
-    }, 8000);  // 每8秒添加一个新交易
+    } catch (error) {
+      console.error('获取交易数据失败:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    return () => clearInterval(interval);
+  // 初始化交易数据和追踪的鲸鱼地址
+  useEffect(() => {
+    // 获取实际数据
+    fetchTransactions();
+    
+    // 初始化一些被追踪的鲸鱼地址 (这部分可以保留，或者从后端获取)
+    setTrackedWhales(['0x5678...1234', '0x1234...5678']);
+    
+    // 设置定时刷新
+    const refreshInterval = setInterval(() => {
+      fetchTransactions();
+    }, 60000); // 每分钟刷新一次数据
+    
+    return () => {
+      clearInterval(refreshInterval);
+    };
   }, []);
 
   // 新交易出现时滚动到顶部
@@ -521,39 +316,302 @@ const LiveTransactionStream: React.FC = () => {
     }
   }, [isNewItem]);
 
-  // 获取NFT图片 (模拟)
-  const getNftImage = (collection: string) => {
-    const collections: {[key: string]: string} = {
-      'BAYC': 'https://i.seadn.io/gae/Ju9CkWtV-1Okvf45wo8UctR-M9He2PjILP0oOvxE89AyiPPGtrR3gysu1Zgy0hjd2xKIgjJJtWIc0ybj4Vd7wv8t3pxDGHoJBzDB?auto=format&dpr=1&w=1000',
-      'Azuki': 'https://i.seadn.io/gae/H8jOCJuQokNqGBpkBN5wk1oZwO7LM8bNnrHCaekV2nKjnCqw6UB5oaH8XyNeBDj6bA_n1mjejzhFQUP3O1NfjFLHr3FOaeHcTOOT?auto=format&dpr=1&w=1000',
-      'CryptoPunks': 'https://i.seadn.io/gae/BdxvLseXcfl57BiuQcQYdJ64v-aI8din7WPk0Pgo3qQFhAUH-B6i-dCqqc_mCkRIzULmwzwecnohLhrcH8A9mpWIZqA7ygc52Sr81hE?auto=format&dpr=1&w=1000',
-      'Doodles': 'https://i.seadn.io/gae/7B0qai02OdHA8P_EOVK672qUliyjQdQDGNrACxs7WnTgZAkJa_wWURnIFKeOh5VTf8cfTqW3wQpozGEJpJpJnv_DqHDFWxcQplRFyw?auto=format&dpr=1&w=1000',
-      'CloneX': 'https://i.seadn.io/gae/XN0XuD8Uh3jyRWNtPTFeXJg_ht8m5ofDx6aHklOiy4amhFuWUa0JaR6It49AH8tlnYS386Q0TW_-Lmedn0UET_ko1a3CbJGeu5iHMg?auto=format&dpr=1&w=1000',
-      'MAYC': 'https://i.seadn.io/gae/lHexKRMpw-aoSyB1WdFBff5yfANLReFxHzt1DOj_sg7mS14yARpuvYcUtsyyx-Nkpk6WTcUPFoG53VnLJezYi8hAs0OxNZwlw6Y-dmI?auto=format&dpr=1&w=1000',
-      'Moonbirds': 'https://i.seadn.io/gae/H-eyNE1MwL5ohL-tCfn_Xa1Sl9M9B4612tLYeUlQubzt4ewhr4huJIR5OLuyO3Z5PpJFSwdm7rq-TikAh7f5eUw338A2cy6HRH75?auto=format&dpr=1&w=1000',
-      'Pudgy Penguins': 'https://i.seadn.io/gae/yNi-XdGxsgQCPpqSio4o31ygAV6wURdIdInWRcFIl46UjUQ1eV7BEndGe8L661OoG-clRi7EgInLX4LPu9Jfw4fq0bnVYHqIDgOa?auto=format&dpr=1&w=1000',
-      // 新增收藏集图标
-      'Otherdeeds': 'https://i.seadn.io/gae/yIm-M5-BpSDdTEIJRt5D6xphizhIdozXjqSITgK4phWq7MmAU3qE7Nw7POGCiPGyhtJ3ZFP8iJ29TFl-RLcGBWX5qI4-ZcnCPcsY4zI?auto=format&dpr=1&w=256',
-      'WoW': 'https://i.seadn.io/gae/EFAQpIktMraCrs8YLJy_FgjN9jOJW-O6cAZr9eriPZdkKvhJWEdre9wZOxTZL84HJN0GZxwNJXVPOZ8OQfYxgUMnR2JmrpdtWRK1?auto=format&dpr=1&w=256',
-      'CyberKongz': 'https://i.seadn.io/gae/LIpf9z6Ux8uxn69auBME9FCTXpXqSYFo8ZLO1GaM8T7S3hiKScHaClXe0ZdhTv5br6FE2g5i-J5SobhKFsYfe6CIMCv-UfnrlYFWOM4?auto=format&dpr=1&w=256',
-      'Cool Cats': 'https://i.seadn.io/gae/LIov33kogXOK4XZd2ESj29sqm_Hww5JSdO7AFn5wjt8xgnJJ0UpNV9yITqxra3s_LMEW1AnnrgOVB_hDpjJRA1uF4skI5Sdi_9rULi8?auto=format&dpr=1&w=256',
-      'Meebits': 'https://i.seadn.io/gae/d784iHHbqQFVH1XYD6HoT4u3y_Fsu_9FZUltWjnOzoYv7qqB5dLUqpOJ16kTQAGr-NORVYHOwzOqRkigvUrYoBCYAAltp8Zf-ZV3?auto=format&dpr=1&w=256',
-      'Cryptoadz': 'https://i.seadn.io/gae/iofetZEyiEIGcNyJKpbOafb_efJyeo7QOYnTog8qcQJhqoBU-Vu7mnijXM7SouWRtHKCuLIC9XDcGILXfyg0bnBZ6IPrWMA5VaCgygE?auto=format&dpr=1&w=256',
-      'Goblintown': 'https://i.seadn.io/gae/cb_wdEAmvry_noTCq1EDPD3eF04Wg3YxHPzGW9QjIjX9-hU-Q5y_rLpbEWhnmcSuYWRiV7bjZ6T41w8tgMqjEIHFWzG_AQT-qm1KnKU?auto=format&dpr=1&w=256'
-    };
+  // 修改获取NFT图片的逻辑，优先使用API返回的logo_url
+  const getNftImage = (collection: string, logoUrl?: string) => {
+    // 优先使用API返回的logo_url
+    if (logoUrl && (logoUrl.startsWith('http') || logoUrl.startsWith('https'))) {
+      console.log(`使用API返回的logo_url: ${logoUrl} 用于收藏集 ${collection}`);
+      return logoUrl;
+    }
     
-    return collections[collection] || 'https://i.seadn.io/gae/Ju9CkWtV-1Okvf45wo8UctR-M9He2PjILP0oOvxE89AyiPPGtrR3gysu1Zgy0hjd2xKIgjJJtWIc0ybj4Vd7wv8t3pxDGHoJBzDB?auto=format&dpr=1&w=1000';
+    // 直接处理HOPE收藏集（如果没有logo_url）
+    if (collection.toLowerCase() === 'hope') {
+      return 'https://i.seadn.io/gcs/files/2d058acad86d29a218bd1fba24e9eb28.png?auto=format&dpr=1&w=256';
+    }
+    
+    // 标准化集合名称（转为小写并移除空格）以便更好地匹配
+    const normalizedCollection = collection.toLowerCase().replace(/\s+/g, '');
+    
+    const collections: { [key: string]: string } = {
+      'bayc': 'https://i.seadn.io/gae/Ju9CkWtV-1Okvf45wo8UctR-M9He2PjILP0oOvxE89AyiPPGtrR3gysu1Zgy0hjd2xKIgjJJtWIc0ybj4Vd7wv8t3pxDGHoJBzDB?auto=format&dpr=1&w=256',
+      'azuki': 'https://i.seadn.io/gae/H8jOCJuQokNqGBpkBN5wk1oZwO7LM8bNnrHCaekV2nKjnCqw6UB5oaH8XyNeBDj6bA_n1mjejzhFQUP3O1NfjFLHr3FOaeHcTOOT?auto=format&dpr=1&w=256',
+      'cryptopunks': 'https://i.seadn.io/gae/BdxvLseXcfl57BiuQcQYdJ64v-aI8din7WPk0Pgo3qQFhAUH-B6i-dCqqc_mCkRIzULmwzwecnohLhrcH8A9mpWIZqA7ygc52Sr81hE?auto=format&dpr=1&w=256',
+      'doodles': 'https://i.seadn.io/gae/7B0qai02OdHA8P_EOVK672qUliyjQdQDGNrACxs7WnTgZAkJa_wWURnIFKeOh5VTf8cfTqW3wQpozGEJpJpJnv_DqHDFWxcQplRFyw?auto=format&dpr=1&w=256',
+      'clonex': 'https://i.seadn.io/gae/XN0XuD8Uh3jyRWNtPTFeXJg_ht8m5ofDx6aHklOiy4amhFuWUa0JaR6It49AH8tlnYS386Q0TW_-Lmedn0UET_ko1a3CbJGeu5iHMg?auto=format&dpr=1&w=256',
+      'mayc': 'https://i.seadn.io/gae/lHexKRMpw-aoSyB1WdFBff5yfANLReFxHzt1DOj_sg7mS14yARpuvYcUtsyyx-Nkpk6WTcUPFoG53VnLJezYi8hAs0OxNZwlw6Y-dmI?auto=format&dpr=1&w=256',
+      'moonbirds': 'https://i.seadn.io/gae/H-eyNE1MwL5ohL-tCfn_Xa1Sl9M9B4612tLYeUlQubzt4ewhr4huJIR5OLuyO3Z5PpJFSwdm7rq-TikAh7f5eUw338A2cy6HRH75?auto=format&dpr=1&w=256',
+      'pudgypenguins': 'https://i.seadn.io/gae/yNi-XdGxsgQCPpqSio4o31ygAV6wURdIdInWRcFIl46UjUQ1eV7BEndGe8L661OoG-clRi7EgInLX4LPu9Jfw4fq0bnVYHqIDgOa?auto=format&dpr=1&w=256',
+      'otherdeeds': 'https://i.seadn.io/gae/yIm-M5-BpSDdTEIJRt5D6xphizhIdozXjqSITgK4phWq7MmAU3qE7Nw7POGCiPGyhtJ3ZFP8iJ29TFl-RLcGBWX5qI4-ZcnCPcsY4zI?auto=format&dpr=1&w=256',
+      'wow': 'https://i.seadn.io/gae/EFAQpIktMraCrs8YLJy_FgjN9jOJW-O6cAZr9eriPZdkKvhJWEdre9wZOxTZL84HJN0GZxwNJXVPOZ8OQfYxgUMnR2JmrpdtWRK1?auto=format&dpr=1&w=256',
+      'cyberkongz': 'https://i.seadn.io/gae/LIpf9z6Ux8uxn69auBME9FCTXpXqSYFo8ZLO1GaM8T7S3hiKScHaClXe0ZdhTv5br6FE2g5i-J5SobhKFsYfe6CIMCv-UfnrlYFWOM4?auto=format&dpr=1&w=256',
+      'coolcats': 'https://i.seadn.io/gae/LIov33kogXOK4XZd2ESj29sqm_Hww5JSdO7AFn5wjt8xgnJJ0UpNV9yITqxra3s_LMEW1AnnrgOVB_hDpjJRA1uF4skI5Sdi_9rULi8?auto=format&dpr=1&w=256',
+      'meebits': 'https://i.seadn.io/gae/d784iHHbqQFVH1XYD6HoT4u3y_Fsu_9FZUltWjnOzoYv7qqB5dLUqpOJ16kTQAGr-NORVYHOwzOqRkigvUrYoBCYAAltp8Zf-ZV3?auto=format&dpr=1&w=256',
+      'cryptoadz': 'https://i.seadn.io/gae/iofetZEyiEIGcNyJKpbOafb_efJyeo7QOYnTog8qcQJhqoBU-Vu7mnijXM7SouWRtHKCuLIC9XDcGILXfyg0bnBZ6IPrWMA5VaCgygE?auto=format&dpr=1&w=256',
+      'goblintown': 'https://i.seadn.io/gae/cb_wdEAmvry_noTCq1EDPD3eF04Wg3YxHPzGW9QjIjX9-hU-Q5y_rLpbEWhnmcSuYWRiV7bjZ6T41w8tgMqjEIHFWzG_AQT-qm1KnKU?auto=format&dpr=1&w=256',
+      'degods': 'https://i.seadn.io/gae/FVTsD1oMUJHZiBkMibDgXimXQnJzYM9XxoMxTMR-JzHIQW-FGb0jlDfNTRbGZQBgQMKy6oVYDiCDfGTcSUAWatIKcGy4LMrAYnYl?auto=format&dpr=1&w=256',
+      'milady': 'https://i.seadn.io/gae/a_frplnavZA9g4vN3SexO5rrtaBX_cBTaJYcgrPtwQIqPhzgzUendQxiwUdr51CGPE2QyPEa1DHnkW1wLrHAv5DgfC3BP-CRqDIVfGo?auto=format&dpr=1&w=256',
+      'boredapeyachtclub': 'https://i.seadn.io/gae/Ju9CkWtV-1Okvf45wo8UctR-M9He2PjILP0oOvxE89AyiPPGtrR3gysu1Zgy0hjd2xKIgjJJtWIc0ybj4Vd7wv8t3pxDGHoJBzDB?auto=format&dpr=1&w=256',
+      'mutantapeyachtclub': 'https://i.seadn.io/gae/lHexKRMpw-aoSyB1WdFBff5yfANLReFxHzt1DOj_sg7mS14yARpuvYcUtsyyx-Nkpk6WTcUPFoG53VnLJezYi8hAs0OxNZwlw6Y-dmI?auto=format&dpr=1&w=256',
+      'fidenza': 'https://i.seadn.io/gae/yNi-XdGxsgQCPpqSio4o31ygAV6wURdIdInWRcFIl46UjUQ1eV7BEndGe8L661OoG-clRi7EgInLX4LPu9Jfw4fq0bnVYHqIDgOa?auto=format&dpr=1&w=256',
+      'chromiesquiggle': 'https://i.seadn.io/gae/0qG8Y78s198F2R0xTOhje0UeK7GWpgKdLTdL2NF8e_siutxvxE5wNKoH_5XgLvCcB-jOq6hbidLuFAr2rzQBQkYNwu6_tUJhGnyom4I?auto=format&dpr=1&w=256',
+      'autoglyphs': 'https://i.seadn.io/gae/JYz5dU8xK0FCzFp4NiOGkZGzVB77JQ2PMz9tMr7N2em9mvg8BpWHReqQOOK8RXwEMJbUqSY3ZFZyQB3c0jZ-lBb-MaijEOYc9bvzMA?auto=format&dpr=1&w=256',
+      'nouns': 'https://i.seadn.io/gae/dQQcSXxzJJBw2FXB-aZFh-jAXrGWss2RfZxDY4Ykr8uqJT8-cY1FJR9cq9qMXmUtKK9GBEEzZ7kTXKd_iBDxT3lw1XwWT-wB3FveqA?auto=format&dpr=1&w=256',
+      'loot': 'https://i.seadn.io/gae/Nhz0VbI2GV_PfS_9LDpwJzpH6xxbx0Mxoz2WwXNxmiifeI-JxgJZXD5IutgNTYZEYc3mB73MTJKc7G_9Hbv5ArjnWqpZ6-1wBYx0IQ?auto=format&dpr=1&w=256',
+      'hope': 'https://i.seadn.io/gcs/files/2d058acad86d29a218bd1fba24e9eb28.png?auto=format&dpr=1&w=256'
+    };
+
+    // 处理特殊情况
+    if (normalizedCollection.includes('bored') && normalizedCollection.includes('ape')) return collections['bayc'];
+    if (normalizedCollection.includes('mutant') && normalizedCollection.includes('ape')) return collections['mayc'];
+    if (normalizedCollection.includes('cool') && normalizedCollection.includes('cat')) return collections['coolcats'];
+    if (normalizedCollection.includes('cyber') && normalizedCollection.includes('kong')) return collections['cyberkongz'];
+    if (normalizedCollection.includes('pudgy')) return collections['pudgypenguins'];
+    if (normalizedCollection.includes('cryptopunk')) return collections['cryptopunks'];
+    
+    // 检查集合名称是否存在，不区分大小写
+    for (const [key, url] of Object.entries(collections)) {
+      if (normalizedCollection.includes(key.toLowerCase())) {
+        return url;
+      }
+    }
+
+    // 检查是否有匹配的图标，如果没有，尝试模糊匹配
+    if (collections[normalizedCollection]) {
+      return collections[normalizedCollection];
+    }
+    
+    // 尝试部分匹配
+    for (const [key, url] of Object.entries(collections)) {
+      if (normalizedCollection.includes(key) || key.includes(normalizedCollection)) {
+        return url;
+      }
+    }
+
+    // 如果找不到匹配的图标，使用默认图标
+    const defaultLogo = 'https://i.seadn.io/gae/Ju9CkWtV-1Okvf45wo8UctR-M9He2PjILP0oOvxE89AyiPPGtrR3gysu1Zgy0hjd2xKIgjJJtWIc0ybj4Vd7wv8t3pxDGHoJBzDB?auto=format&dpr=1&w=256';
+    console.log(`未找到"${collection}"的图标，使用默认图标`);
+    return defaultLogo;
   };
 
   // 处理追踪/取消追踪鲸鱼
   const toggleTracking = (whaleAddress: string) => {
+    // 检查是否已经追踪该鲸鱼
+    const isTracked = trackedWhales.includes(whaleAddress);
+    
+    // 更新前端追踪状态
     setTrackedWhales(prev => {
-      if (prev.includes(whaleAddress)) {
+      if (isTracked) {
         return prev.filter(addr => addr !== whaleAddress);
       } else {
         return [...prev, whaleAddress];
       }
     });
+    
+    // 如果是新追踪的鲸鱼，尝试将其添加到重点追踪鲸鱼列表
+    if (!isTracked) {
+      try {
+        // 查找此鲸鱼在交易中的信息
+        const whaleTransaction = transactions.find(tx => 
+          (tx.whaleIsBuyer && tx.buyer === whaleAddress) || 
+          (tx.whaleSeller && tx.seller === whaleAddress));
+        
+        console.log(`尝试将鲸鱼地址 ${whaleAddress} 添加到重点追踪鲸鱼列表...`);
+        
+        // 异步获取鲸鱼的完整数据
+        const fetchWhaleDetails = async () => {
+          try {
+            // 从数据湖API获取鲸鱼详细信息（首先尝试ads_whale_tracking_list表）
+            const response: any = await dataLakeApi.queryTableData('ads', 'ads_whale_tracking_list', 1000);
+            
+            if (Array.isArray(response) && response.length > 0) {
+              // 查找匹配的鲸鱼详细数据
+              const whaleDetail = response.find(item => item.wallet_address === whaleAddress);
+              
+              if (whaleDetail) {
+                console.log('在ads_whale_tracking_list表中找到鲸鱼详细数据:', whaleDetail);
+                
+                // 构造完整的鲸鱼数据对象
+                const whaleData = {
+                  whaleId: `WHALE-${whaleDetail.tracking_id || whaleDetail.wallet_address.substring(0, 8)}`,
+                  whaleAddress: whaleDetail.wallet_address,
+                  trackingTime: whaleDetail.first_track_date ? new Date(whaleDetail.first_track_date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                  influence: whaleDetail.influence_score || 0,
+                  trackingProfit: Number(whaleDetail.total_profit_usd) || 0,
+                  trackingProfitRate: Number(whaleDetail.roi_percentage) || 0,
+                  walletType: whaleDetail.wallet_type || 'TRACKING',
+                  rawData: whaleDetail
+                };
+                
+                // 发送包含完整鲸鱼数据的事件
+                const event = new CustomEvent('whaleTracked', {
+                  detail: {
+                    action: 'add',
+                    address: whaleAddress,
+                    whaleData: whaleData
+                  }
+                });
+                window.dispatchEvent(event);
+                
+                // 显示成功消息
+                message.success(`成功将鲸鱼 ${formatAddress(whaleAddress)} 添加到重点追踪列表！`);
+                return;
+              }
+            }
+            
+            // 如果在ads_whale_tracking_list表中未找到鲸鱼数据，尝试从ads_top_profit_whales表获取
+            console.log('在ads_whale_tracking_list表中未找到鲸鱼数据，尝试从ads_top_profit_whales表获取...');
+            const profitWhalesResponse: any = await dataLakeApi.queryTableData('ads', 'ads_top_profit_whales', 1000);
+            
+            if (Array.isArray(profitWhalesResponse) && profitWhalesResponse.length > 0) {
+              const profitWhaleDetail = profitWhalesResponse.find(item => item.wallet_address === whaleAddress);
+              
+              if (profitWhaleDetail) {
+                console.log('在ads_top_profit_whales表中找到鲸鱼详细数据:', profitWhaleDetail);
+                
+                // 构造完整的鲸鱼数据对象，从ads_top_profit_whales表提取更多详细信息
+                const whaleData = {
+                  whaleId: `WHALE-${profitWhaleDetail.wallet_address.substring(0, 8)}`,
+                  whaleAddress: profitWhaleDetail.wallet_address,
+                  trackingTime: profitWhaleDetail.first_seen_date || new Date().toISOString().split('T')[0],
+                  influence: profitWhaleDetail.influence_score || 50,
+                  trackingProfit: Number(profitWhaleDetail.total_profit_eth) * 2000 || 0, // 假设ETH价格为2000美元
+                  trackingProfitRate: Number(profitWhaleDetail.roi_percentage) || 0,
+                  walletType: profitWhaleDetail.wallet_type || 'TRACKING',
+                  rawData: profitWhaleDetail
+                };
+                
+                // 发送包含完整鲸鱼数据的事件
+                const event = new CustomEvent('whaleTracked', {
+                  detail: {
+                    action: 'add',
+                    address: whaleAddress,
+                    whaleData: whaleData
+                  }
+                });
+                window.dispatchEvent(event);
+                
+                // 显示成功消息
+                message.success(`成功将鲸鱼 ${formatAddress(whaleAddress)} 添加到重点追踪列表！`);
+                return;
+              }
+            }
+            
+            // 如果在ads_top_profit_whales表中也未找到，尝试从ads_top_roi_whales表获取
+            console.log('在ads_top_profit_whales表中未找到鲸鱼数据，尝试从ads_top_roi_whales表获取...');
+            const roiWhalesResponse: any = await dataLakeApi.queryTableData('ads', 'ads_top_roi_whales', 1000);
+            
+            if (Array.isArray(roiWhalesResponse) && roiWhalesResponse.length > 0) {
+              const roiWhaleDetail = roiWhalesResponse.find(item => item.wallet_address === whaleAddress);
+              
+              if (roiWhaleDetail) {
+                console.log('在ads_top_roi_whales表中找到鲸鱼详细数据:', roiWhaleDetail);
+                
+                // 构造完整的鲸鱼数据对象，从ads_top_roi_whales表提取更多详细信息
+                const whaleData = {
+                  whaleId: `WHALE-${roiWhaleDetail.wallet_address.substring(0, 8)}`,
+                  whaleAddress: roiWhaleDetail.wallet_address,
+                  trackingTime: roiWhaleDetail.first_seen_date || new Date().toISOString().split('T')[0],
+                  influence: roiWhaleDetail.influence_score || 50,
+                  trackingProfit: Number(roiWhaleDetail.total_profit_eth) * 2000 || 0, // 假设ETH价格为2000美元
+                  trackingProfitRate: Number(roiWhaleDetail.roi_percentage) || 0,
+                  walletType: 'SMART', // 假设在roi表中的都是聪明鲸鱼
+                  rawData: roiWhaleDetail
+                };
+                
+                // 发送包含完整鲸鱼数据的事件
+                const event = new CustomEvent('whaleTracked', {
+                  detail: {
+                    action: 'add',
+                    address: whaleAddress,
+                    whaleData: whaleData
+                  }
+                });
+                window.dispatchEvent(event);
+                
+                // 显示成功消息
+                message.success(`成功将鲸鱼 ${formatAddress(whaleAddress)} 添加到重点追踪列表！`);
+                return;
+              }
+            }
+            
+            // 如果在所有表中都未找到鲸鱼数据，使用交易数据构建基本信息
+            console.log('在所有数据表中未找到鲸鱼详细数据，使用交易数据创建基本记录');
+            
+            // 从当前交易中提取信息创建基本的鲸鱼数据
+            const basicWhaleData = {
+              whaleId: `WHALE-${whaleAddress.substring(0, 8)}`,
+              whaleAddress: whaleAddress,
+              trackingTime: new Date().toISOString().split('T')[0],
+              influence: whaleTransaction?.whaleInfluence || 50,
+              trackingProfit: 0,
+              trackingProfitRate: 0,
+              walletType: 'TRACKING',
+              // 添加一些从当前交易中可以获取的信息
+              lastTransactionTime: new Date().toISOString(),
+              lastTransactionType: whaleTransaction?.whaleIsBuyer ? 'BUY' : 'SELL',
+              lastTransactionCollection: whaleTransaction?.collection || '',
+              lastTransactionPrice: whaleTransaction?.price || 0
+            };
+            
+            // 发送包含基本鲸鱼数据的事件
+            const event = new CustomEvent('whaleTracked', {
+              detail: {
+                action: 'add',
+                address: whaleAddress,
+                whaleData: basicWhaleData
+              }
+            });
+            window.dispatchEvent(event);
+            
+            // 显示成功消息
+            message.success(`成功将鲸鱼 ${formatAddress(whaleAddress)} 添加到重点追踪列表！`);
+          } catch (error) {
+            console.error('获取鲸鱼详细数据失败:', error);
+            
+            // 发送只包含地址的基本事件
+            const fallbackEvent = new CustomEvent('whaleTracked', {
+              detail: {
+                action: 'add',
+                address: whaleAddress,
+                whaleData: {
+                  whaleId: `WHALE-${whaleAddress.substring(0, 8)}`,
+                  whaleAddress: whaleAddress,
+                  trackingTime: new Date().toISOString().split('T')[0],
+                  influence: 50,
+                  trackingProfit: 0,
+                  trackingProfitRate: 0,
+                  walletType: 'TRACKING'
+                }
+              }
+            });
+            window.dispatchEvent(fallbackEvent);
+            
+            // 显示成功消息（尽管获取详细数据失败）
+            message.success(`已将鲸鱼 ${formatAddress(whaleAddress)} 添加到重点追踪列表，但无法获取详细数据`);
+          }
+        };
+        
+        // 执行异步获取
+        fetchWhaleDetails();
+        
+      } catch (error) {
+        console.error('添加鲸鱼到追踪列表失败:', error);
+        message.error(`添加鲸鱼 ${formatAddress(whaleAddress)} 到追踪列表失败`);
+      }
+    } else {
+      // 如果是取消追踪
+      console.log(`取消追踪鲸鱼地址 ${whaleAddress}`);
+      message.info(`已取消追踪鲸鱼 ${formatAddress(whaleAddress)}`);
+      
+      // 发送取消追踪事件
+      const event = new CustomEvent('whaleTracked', {
+        detail: {
+          action: 'remove',
+          address: whaleAddress
+        }
+      });
+      window.dispatchEvent(event);
+    }
   };
 
   // 判断一个鲸鱼是否被追踪
@@ -564,7 +622,7 @@ const LiveTransactionStream: React.FC = () => {
   // 渲染交易方向标签
   const renderWhaleTag = (item: any) => {
     if (!item.isWhale) return null;
-    
+
     if (item.whaleIsBuyer) {
       return (
         <Tag color="#52c41a" style={{ marginLeft: 8 }}>鲸鱼买入</Tag>
@@ -574,7 +632,7 @@ const LiveTransactionStream: React.FC = () => {
         <Tag color="#f5222d" style={{ marginLeft: 8 }}>鲸鱼卖出</Tag>
       );
     }
-    
+
     return null;
   };
 
@@ -587,19 +645,19 @@ const LiveTransactionStream: React.FC = () => {
   // 高亮鲸鱼地址
   const renderAddress = (address: string, isWhale: boolean, isBuyer: boolean, isSeller: boolean, item: any) => {
     if (!isWhale) return formatAddress(address);
-    
+
     if ((isBuyer && address === item.buyer) || (isSeller && address === item.seller)) {
       return (
         <Text style={{ color: '#f5222d', fontWeight: 'bold' }}>{formatAddress(address)}</Text>
       );
     }
-    
+
     return formatAddress(address);
   };
 
   // 新增函数：获取交易行为标签
   const getActionTypeTag = (actionType: string) => {
-    const actionTypes: {[key: string]: {color: string, text: string}} = {
+    const actionTypes: { [key: string]: { color: string, text: string } } = {
       'accumulate': { color: '#52c41a', text: '积累' },
       'dump': { color: '#f5222d', text: '抛售' },
       'flip': { color: '#faad14', text: '短炒' },
@@ -608,7 +666,7 @@ const LiveTransactionStream: React.FC = () => {
       'fomo': { color: '#eb2f96', text: '追高' },
       'bargain': { color: '#13c2c2', text: '抄底' }
     };
-    
+
     const defaultType = { color: '#1890ff', text: '交易' };
     return actionTypes[actionType] || defaultType;
   };
@@ -642,13 +700,13 @@ const LiveTransactionStream: React.FC = () => {
     if (score >= 90) color = '#f5222d';
     else if (score >= 70) color = '#faad14';
     else if (score >= 50) color = '#52c41a';
-    
+
     return (
       <div style={{ display: 'flex', alignItems: 'center' }}>
-        <div style={{ 
-          width: 35, 
-          height: 35, 
-          borderRadius: '50%', 
+        <div style={{
+          width: 35,
+          height: 35,
+          borderRadius: '50%',
           background: `conic-gradient(${color} ${score}%, transparent 0)`,
           display: 'flex',
           alignItems: 'center',
@@ -656,10 +714,10 @@ const LiveTransactionStream: React.FC = () => {
           position: 'relative',
           border: `1px solid ${color}`
         }}>
-          <div style={{ 
-            width: 27, 
-            height: 27, 
-            borderRadius: '50%', 
+          <div style={{
+            width: 27,
+            height: 27,
+            borderRadius: '50%',
             background: '#001529',
             display: 'flex',
             alignItems: 'center',
@@ -691,6 +749,8 @@ const LiveTransactionStream: React.FC = () => {
     // 标签筛选
     if (tagFilter !== 'all') {
       filtered = filtered.filter(item => {
+        if (tagFilter === 'whale_only') return item.isWhale; // 只显示鲸鱼交易
+        if (tagFilter === 'normal') return !item.isWhale; // 只显示非鲸鱼交易
         if (tagFilter === 'whale_buy') return item.whaleIsBuyer;
         if (tagFilter === 'whale_sell') return item.whaleSeller;
         return item.actionType === tagFilter;
@@ -726,29 +786,30 @@ const LiveTransactionStream: React.FC = () => {
       });
     }
 
-    return filtered;
+    // 限制返回数量为50条，提高渲染性能
+    return filtered.slice(0, 50);
   };
 
   return (
-    <Card 
+    <Card
       title={
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-        <div style={{ display: 'flex', alignItems: 'center' }}>
-          <FireOutlined style={{ color: '#f5222d', marginRight: 8 }} />
-          <Text style={{ 
-            color: 'rgba(255, 255, 255, 0.85)', 
-            fontSize: 16, 
-            fontWeight: 500 
-          }}>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <FireOutlined style={{ color: '#f5222d', marginRight: 8 }} />
+            <Text style={{
+              color: 'rgba(255, 255, 255, 0.85)',
+              fontSize: 16,
+              fontWeight: 500
+            }}>
               实时鲸鱼交易流
-          </Text>
-            <Badge 
-              count={getFilteredTransactions().length} 
-              style={{ 
+            </Text>
+            <Badge
+              count={transactions.length}
+              style={{
                 backgroundColor: '#1890ff',
                 marginLeft: 12,
                 boxShadow: '0 0 8px rgba(24, 144, 255, 0.4)'
-              }} 
+              }}
             />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -762,12 +823,12 @@ const LiveTransactionStream: React.FC = () => {
               suffixIcon={<CaretDownOutlined style={{ color: 'rgba(255, 255, 255, 0.45)' }} />}
             >
               {ACTION_TAGS.map(tag => (
-                <Select.Option 
-                  key={tag.value} 
+                <Select.Option
+                  key={tag.value}
                   value={tag.value}
                 >
-                  <div style={{ 
-                    display: 'flex', 
+                  <div style={{
+                    display: 'flex',
                     alignItems: 'center',
                     color: tag.value === 'all' ? 'rgba(255, 255, 255, 0.85)' : tag.color
                   }}>
@@ -793,11 +854,11 @@ const LiveTransactionStream: React.FC = () => {
               suffixIcon={<CaretDownOutlined style={{ color: 'rgba(255, 255, 255, 0.45)' }} />}
             >
               {TIME_OPTIONS.map(option => (
-                <Select.Option 
-                  key={option.value} 
+                <Select.Option
+                  key={option.value}
                   value={option.value}
                 >
-                  <Text style={{ 
+                  <Text style={{
                     color: option.value === 'all' ? 'rgba(255, 255, 255, 0.85)' : '#1890ff'
                   }}>
                     {option.label}
@@ -807,8 +868,8 @@ const LiveTransactionStream: React.FC = () => {
             </Select>
           </div>
         </div>
-      } 
-      className="tech-card" 
+      }
+      className="tech-card"
       bordered={false}
       bodyStyle={{ padding: 0, maxHeight: '724px', overflow: 'auto' }}
       ref={listRef}
@@ -820,15 +881,15 @@ const LiveTransactionStream: React.FC = () => {
         renderItem={(item, index) => {
           const actionType = getActionTypeTag(item.actionType || 'explore');
           return (
-          <List.Item
-            className={index === 0 && isNewItem ? 'new-transaction-animation' : ''}
-            style={{ 
+            <List.Item
+              className={index === 0 && isNewItem ? 'new-transaction-animation' : ''}
+              style={{
                 padding: '16px 24px',
-              borderBottom: '1px solid rgba(24, 144, 255, 0.1)',
-                background: hoveredItem === index 
-                  ? 'rgba(24, 144, 255, 0.25)' 
-                  : (index === 0 && isNewItem 
-                ? 'rgba(24, 144, 255, 0.15)' 
+                borderBottom: '1px solid rgba(24, 144, 255, 0.1)',
+                background: hoveredItem === index
+                  ? 'rgba(24, 144, 255, 0.25)'
+                  : (index === 0 && isNewItem
+                    ? 'rgba(24, 144, 255, 0.15)'
                     : 'rgba(245, 34, 45, 0.05)'),
                 transition: 'all 0.3s ease',
                 cursor: 'pointer'
@@ -847,18 +908,18 @@ const LiveTransactionStream: React.FC = () => {
               <div style={{ display: 'flex', width: '100%' }}>
                 {/* 左侧：NFT图片和鲸鱼影响力 */}
                 <div style={{ marginRight: 16, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <Avatar 
-                  src={getNftImage(item.collection)} 
-                    size={60} 
-                  style={{ 
-                    border: item.isWhale ? '2px solid #f5222d' : '1px solid rgba(24, 144, 255, 0.3)',
+                  <Avatar
+                    src={getNftImage(item.collection, item.logoUrl)}
+                    size={60}
+                    style={{
+                      border: item.isWhale ? '2px solid #f5222d' : '1px solid rgba(24, 144, 255, 0.3)',
                       boxShadow: item.isWhale ? '0 0 10px rgba(245, 34, 45, 0.5)' : 'none',
                       marginBottom: 8
-                    }} 
+                    }}
                   />
                   {/* 删除影响力分数标签 */}
                 </div>
-                
+
                 {/* 中间：交易详情 */}
                 <div style={{ flex: 1 }}>
                   {/* 第一行：NFT名称、标签、时间 */}
@@ -870,28 +931,23 @@ const LiveTransactionStream: React.FC = () => {
                     </div>
                     <Text style={{ color: 'rgba(255, 255, 255, 0.45)', fontSize: 12 }}>{item.time}</Text>
                   </div>
-                  
-                  {/* 第二行：收藏集、稀有度、价格对比 */}
+
+                  {/* 第二行：收藏集 */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <div>
+                    <div>
                       <Text style={{ color: 'rgba(255, 255, 255, 0.65)', fontSize: 13 }}>
                         收藏集: {item.collection}
-                  </Text>
-                      {item.rarityRank && (
-                        <Text style={{ color: 'rgba(255, 255, 255, 0.55)', fontSize: 13, marginLeft: 12 }}>
-                          稀有度排名: #{item.rarityRank}
-                    </Text>
-                      )}
+                      </Text>
+                    </div>
+                    <div>
+                      {/* 可以根据需要在这里添加其他信息 */}
+                    </div>
                   </div>
-+                 <div>
-+                   {/* 可以根据需要在这里添加其他信息 */}
-+                 </div>
-                </div>
-                  
+
                   {/* 第三行：交易双方 */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <div style={{ 
-                      display: 'flex', 
+                    <div style={{
+                      display: 'flex',
                       alignItems: 'center',
                       background: 'rgba(0, 0, 0, 0.15)',
                       padding: '4px 8px',
@@ -899,9 +955,9 @@ const LiveTransactionStream: React.FC = () => {
                       boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
                     }}>
                       <Tooltip title={`卖家地址: ${item.seller}`}>
-                        <div 
-                          style={{ 
-                            display: 'flex', 
+                        <div
+                          style={{
+                            display: 'flex',
                             alignItems: 'center',
                             cursor: item.whaleSeller ? 'pointer' : 'default',
                             padding: '2px 6px',
@@ -911,27 +967,27 @@ const LiveTransactionStream: React.FC = () => {
                           }}
                           onClick={() => handleWhaleAddressClick(item.seller, item.whaleSeller)}
                         >
-                          <UserOutlined style={{ 
+                          <UserOutlined style={{
                             marginRight: 4,
-                            color: item.whaleSeller ? '#f5222d' : 'rgba(255, 255, 255, 0.45)' 
+                            color: item.whaleSeller ? '#f5222d' : 'rgba(255, 255, 255, 0.45)'
                           }} />
-                          {item.whaleSeller ? 
-                            <Text style={{ color: '#f5222d', fontWeight: 'bold' }}>{formatAddress(item.seller)}</Text> : 
+                          {item.whaleSeller ?
+                            <Text style={{ color: '#f5222d', fontWeight: 'bold' }}>{formatAddress(item.seller)}</Text> :
                             <Text style={{ color: 'rgba(255, 255, 255, 0.65)' }}>{formatAddress(item.seller)}</Text>
                           }
                         </div>
                       </Tooltip>
-                      
-                      <SwapRightOutlined style={{ 
-                        margin: '0 8px', 
+
+                      <SwapRightOutlined style={{
+                        margin: '0 8px',
                         color: 'rgba(255, 255, 255, 0.45)',
                         fontSize: 16
                       }} />
-                      
+
                       <Tooltip title={`买家地址: ${item.buyer}`}>
-                        <div 
-                          style={{ 
-                            display: 'flex', 
+                        <div
+                          style={{
+                            display: 'flex',
                             alignItems: 'center',
                             cursor: item.whaleIsBuyer ? 'pointer' : 'default',
                             padding: '2px 6px',
@@ -941,43 +997,45 @@ const LiveTransactionStream: React.FC = () => {
                           }}
                           onClick={() => handleWhaleAddressClick(item.buyer, item.whaleIsBuyer)}
                         >
-                          <UserOutlined style={{ 
+                          <UserOutlined style={{
                             marginRight: 4,
-                            color: item.whaleIsBuyer ? '#f5222d' : 'rgba(255, 255, 255, 0.45)' 
+                            color: item.whaleIsBuyer ? '#f5222d' : 'rgba(255, 255, 255, 0.45)'
                           }} />
-                          {item.whaleIsBuyer ? 
-                            <Text style={{ color: '#f5222d', fontWeight: 'bold' }}>{formatAddress(item.buyer)}</Text> : 
+                          {item.whaleIsBuyer ?
+                            <Text style={{ color: '#f5222d', fontWeight: 'bold' }}>{formatAddress(item.buyer)}</Text> :
                             <Text style={{ color: 'rgba(255, 255, 255, 0.65)' }}>{formatAddress(item.buyer)}</Text>
                           }
                         </div>
                       </Tooltip>
                     </div>
                   </div>
-                  
+
                 </div>
-                
+
                 {/* 右侧：价格和收藏 */}
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', marginLeft: 16 }}>
-              <div style={{ 
-                color: '#f5222d', 
-                fontWeight: 'bold', 
-                textShadow: '0 0 5px rgba(245, 34, 45, 0.3)',
+                  <div style={{
+                    color: '#f5222d',
+                    fontWeight: 'bold',
+                    textShadow: '0 0 5px rgba(245, 34, 45, 0.3)',
                     fontSize: 18,
-                    marginBottom: 8
-              }}>
-                {item.price} ETH
+                    marginBottom: 8,
+                    whiteSpace: 'nowrap', // 确保不换行
+                    overflow: 'hidden',    // 防止溢出
+                    textOverflow: 'ellipsis' // 溢出时显示省略号
+                  }}>
+                    {item.price.toFixed(2)} ETH
                   </div>
-                  {renderPriceChange(item.priceChange || 0)}
                   <div style={{ marginTop: 8 }}>
-                    <Button 
-                      size="small" 
-                      type="text" 
+                    <Button
+                      size="small"
+                      type="text"
                       icon={isWhaleTracked(item.whaleIsBuyer ? item.buyer : (item.whaleSeller ? item.seller : item.whaleAddress)) ? <StarFilled style={{ color: '#faad14' }} /> : <StarOutlined />}
                       onClick={(e) => {
                         e.stopPropagation();
                         toggleTracking(item.whaleIsBuyer ? item.buyer : (item.whaleSeller ? item.seller : item.whaleAddress));
                       }}
-                      style={{ 
+                      style={{
                         color: isWhaleTracked(item.whaleIsBuyer ? item.buyer : (item.whaleSeller ? item.seller : item.whaleAddress)) ? '#faad14' : 'rgba(255, 255, 255, 0.45)',
                         transition: 'all 0.3s'
                       }}
@@ -985,15 +1043,20 @@ const LiveTransactionStream: React.FC = () => {
                       {isWhaleTracked(item.whaleIsBuyer ? item.buyer : (item.whaleSeller ? item.seller : item.whaleAddress)) ? '已追踪' : '追踪'}
                     </Button>
                   </div>
+                </div>
               </div>
-            </div>
-          </List.Item>
+            </List.Item>
           );
         }}
+        pagination={{
+          pageSize: 10,
+          simple: true,
+          style: { textAlign: 'center', margin: '16px 0', color: 'rgba(255, 255, 255, 0.65)' }
+        }}
       />
-      
+
       {/* 添加钱包分析模态框 */}
-      <WalletAnalysisModal 
+      <WalletAnalysisModal
         visible={walletModalVisible}
         onClose={() => setWalletModalVisible(false)}
         walletAddress={selectedWalletAddress}
@@ -1009,7 +1072,7 @@ const TransactionTrendChart: React.FC = () => {
     const dates = ['6月1日', '6月2日', '6月3日', '6月4日', '6月5日', '6月6日', '6月7日'];
     const volumes = [120, 132, 101, 134, 90, 230, 210];
     const amounts = [220000, 182000, 191000, 234000, 290000, 330000, 310000];
-    
+
     return {
       tooltip: {
         trigger: 'axis',
@@ -1197,7 +1260,7 @@ const CollectionActivityChart: React.FC = () => {
             color: 'rgba(255, 255, 255, 0.85)'
           },
           itemStyle: {
-            color: function(params: any) {
+            color: function (params: any) {
               const colorList = [
                 new echarts.graphic.LinearGradient(0, 0, 1, 0, [
                   { offset: 0, color: 'rgba(24, 144, 255, 0.4)' },
@@ -1238,66 +1301,128 @@ const CollectionActivityChart: React.FC = () => {
 };
 
 // 前十鲸鱼交易额饼状图组件
-const TopWhalesTradingVolumeChart: React.FC<{timeRange: 'day' | 'week' | 'month'}> = ({ timeRange }) => {
-  // 获取图表数据
-  const getChartData = () => {
+const TopWhalesTradingVolumeChart: React.FC<{ timeRange: 'day' | 'week' | 'month' }> = ({ timeRange }) => {
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  
+  // 使用useEffect获取数据
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        // 确定要使用的rank_timerange值
+        const rankTimeRange = timeRange === 'day' ? 'DAY' : 
+                             timeRange === 'week' ? '7DAYS' : '30DAYS';
+        
+        // 使用dataLakeApi从ads.ads_top_profit_whales表获取数据
+        const response: any = await dataLakeApi.queryTableData('ads', 'ads_top_profit_whales', 30);
+        
+        // 检查数据是否有效
+        if (Array.isArray(response) && response.length > 0) {
+          // 筛选出特定时间范围的数据并按rank_num排序
+          const filteredData = response
+            .filter((item: any) => item.rank_timerange === rankTimeRange)
+            .sort((a: any, b: any) => a.rank_num - b.rank_num)
+            .slice(0, 10); // 只取前10名
+          
+          // 计算总收益额
+          const totalProfit = filteredData.reduce((sum: number, item: any) => 
+            sum + (Number(item.total_profit_eth) || 0), 0);
+          
+          // 将数据转换为图表需要的格式，包括百分比计算
+          const formattedData = filteredData.map((item: any) => {
+            const profitValue = Number(item.total_profit_eth) || 0;
+            const percentage = totalProfit > 0 ? (profitValue / totalProfit * 100) : 0;
+            
+            return {
+              name: item.wallet_address ? 
+                `${item.wallet_address.substring(0, 6)}...${item.wallet_address.substring(item.wallet_address.length - 4)} (${percentage.toFixed(1)}%)` : 
+                'Unknown',
+              value: profitValue,
+              percentage: percentage
+            };
+          });
+          
+          console.log('鲸鱼收益数据占比:', formattedData.map(item => 
+            `${item.name}: ${item.value} ETH (${item.percentage.toFixed(1)}%)`).join('\n'));
+            
+          setChartData(formattedData);
+        } else {
+          // 如果没有数据，使用模拟数据
+          setChartData(getMockData());
+        }
+      } catch (error) {
+        console.error('获取鲸鱼收益数据失败', error);
+        // 出错时使用模拟数据
+        setChartData(getMockData());
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchData();
+  }, [timeRange]);
+  
+  // 获取模拟数据的方法 - 保留原有的模拟数据作为备用
+  const getMockData = () => {
     // 根据时间范围返回不同的数据
     if (timeRange === 'day') {
       return [
-        { name: 'WHALE-0x5678', value: 450000 },
-        { name: 'WHALE-0x7842', value: 380000 },
-        { name: 'WHALE-0x1234', value: 320000 },
-        { name: 'WHALE-0x2469', value: 280000 },
-        { name: 'WHALE-0x8276', value: 230000 },
-        { name: 'WHALE-0x3694', value: 190000 },
-        { name: 'WHALE-0x9127', value: 150000 },
-        { name: 'WHALE-0x8765', value: 120000 },
-        { name: 'WHALE-0x6723', value: 90000 },
-        { name: 'WHALE-0x1498', value: 70000 }
+        { name: 'WHALE-0x5678 (20.5%)', value: 450000, percentage: 20.5 },
+        { name: 'WHALE-0x7842 (17.3%)', value: 380000, percentage: 17.3 },
+        { name: 'WHALE-0x1234 (14.6%)', value: 320000, percentage: 14.6 },
+        { name: 'WHALE-0x2469 (12.8%)', value: 280000, percentage: 12.8 },
+        { name: 'WHALE-0x8276 (10.5%)', value: 230000, percentage: 10.5 },
+        { name: 'WHALE-0x3694 (8.7%)', value: 190000, percentage: 8.7 },
+        { name: 'WHALE-0x9127 (6.8%)', value: 150000, percentage: 6.8 },
+        { name: 'WHALE-0x8765 (5.5%)', value: 120000, percentage: 5.5 },
+        { name: 'WHALE-0x6723 (4.1%)', value: 90000, percentage: 4.1 },
+        { name: 'WHALE-0x1498 (3.2%)', value: 70000, percentage: 3.2 }
       ];
     } else if (timeRange === 'week') {
       return [
-        { name: 'WHALE-0x5678', value: 1250000 },
-        { name: 'WHALE-0x7842', value: 980000 },
-        { name: 'WHALE-0x1234', value: 760000 },
-        { name: 'WHALE-0x2469', value: 650000 },
-        { name: 'WHALE-0x8276', value: 580000 },
-        { name: 'WHALE-0x3694', value: 520000 },
-        { name: 'WHALE-0x9127', value: 480000 },
-        { name: 'WHALE-0x8765', value: 410000 },
-        { name: 'WHALE-0x6723', value: 380000 },
-        { name: 'WHALE-0x1498', value: 320000 }
+        { name: 'WHALE-0x5678 (20.1%)', value: 1250000, percentage: 20.1 },
+        { name: 'WHALE-0x7842 (15.8%)', value: 980000, percentage: 15.8 },
+        { name: 'WHALE-0x1234 (12.2%)', value: 760000, percentage: 12.2 },
+        { name: 'WHALE-0x2469 (10.5%)', value: 650000, percentage: 10.5 },
+        { name: 'WHALE-0x8276 (9.3%)', value: 580000, percentage: 9.3 },
+        { name: 'WHALE-0x3694 (8.4%)', value: 520000, percentage: 8.4 },
+        { name: 'WHALE-0x9127 (7.7%)', value: 480000, percentage: 7.7 },
+        { name: 'WHALE-0x8765 (6.6%)', value: 410000, percentage: 6.6 },
+        { name: 'WHALE-0x6723 (6.1%)', value: 380000, percentage: 6.1 },
+        { name: 'WHALE-0x1498 (5.2%)', value: 320000, percentage: 5.2 }
       ];
     } else {
       return [
-        { name: 'WHALE-0x5678', value: 4850000 },
-        { name: 'WHALE-0x7842', value: 3720000 },
-        { name: 'WHALE-0x2469', value: 2950000 },
-        { name: 'WHALE-0x1234', value: 2680000 },
-        { name: 'WHALE-0x3694', value: 2450000 },
-        { name: 'WHALE-0x8276', value: 2120000 },
-        { name: 'WHALE-0x9127', value: 1980000 },
-        { name: 'WHALE-0x6723', value: 1650000 },
-        { name: 'WHALE-0x8765', value: 1520000 },
-        { name: 'WHALE-0x1498', value: 1380000 }
+        { name: 'WHALE-0x5678 (19.1%)', value: 4850000, percentage: 19.1 },
+        { name: 'WHALE-0x7842 (14.6%)', value: 3720000, percentage: 14.6 },
+        { name: 'WHALE-0x2469 (11.6%)', value: 2950000, percentage: 11.6 },
+        { name: 'WHALE-0x1234 (10.5%)', value: 2680000, percentage: 10.5 },
+        { name: 'WHALE-0x3694 (9.6%)', value: 2450000, percentage: 9.6 },
+        { name: 'WHALE-0x8276 (8.3%)', value: 2120000, percentage: 8.3 },
+        { name: 'WHALE-0x9127 (7.8%)', value: 1980000, percentage: 7.8 },
+        { name: 'WHALE-0x6723 (6.5%)', value: 1650000, percentage: 6.5 },
+        { name: 'WHALE-0x8765 (6.0%)', value: 1520000, percentage: 6.0 },
+        { name: 'WHALE-0x1498 (5.4%)', value: 1380000, percentage: 5.4 }
       ];
     }
   };
 
   const getOption = () => {
-    const data = getChartData();
+    const data = chartData;
     const totalVolume = data.reduce((sum, item) => sum + item.value, 0);
-    
+
     return {
       tooltip: {
         trigger: 'item',
         formatter: (params: any) => {
-          const percent = ((params.value / totalVolume) * 100).toFixed(1);
+          const item = data.find(d => d.name === params.name);
+          const percent = item?.percentage || ((params.value / totalVolume) * 100).toFixed(1);
           return `<div style="display: flex; flex-direction: column; gap: 8px; padding: 8px 12px;">
-                   <div style="font-size: 14px; font-weight: bold; color: #fff;">${params.name}</div>
+                   <div style="font-size: 14px; font-weight: bold; color: #fff;">${params.name.split(' (')[0]}</div>
                    <div style="display: flex; justify-content: space-between; gap: 16px;">
-                     <span style="color: rgba(255, 255, 255, 0.85);">交易额:</span>
-                     <span style="color: #1890ff; font-weight: bold;">$${params.value.toLocaleString()}</span>
+                     <span style="color: rgba(255, 255, 255, 0.85);">收益额:</span>
+                     <span style="color: #1890ff; font-weight: bold;">${params.value.toFixed(2)} ETH</span>
                    </div>
                    <div style="display: flex; justify-content: space-between; gap: 16px;">
                      <span style="color: rgba(255, 255, 255, 0.85);">占比:</span>
@@ -1404,19 +1529,19 @@ const TopWhalesTradingVolumeChart: React.FC<{timeRange: 'day' | 'week' | 'month'
             ...item,
             itemStyle: {
               color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                { 
-                  offset: 0, 
+                {
+                  offset: 0,
                   color: [
                     '#1890ff', '#52c41a', '#faad14', '#f5222d', '#722ed1',
                     '#13c2c2', '#eb2f96', '#fa541c', '#a0d911', '#2f54eb'
-                  ][index] 
+                  ][index]
                 },
-                { 
-                  offset: 1, 
+                {
+                  offset: 1,
                   color: [
                     '#096dd9', '#389e0d', '#d48806', '#cf1322', '#531dab',
                     '#08979c', '#c41d7f', '#d4380d', '#7cb305', '#1d39c4'
-                  ][index] 
+                  ][index]
                 }
               ])
             }
@@ -1432,11 +1557,17 @@ const TopWhalesTradingVolumeChart: React.FC<{timeRange: 'day' | 'week' | 'month'
   };
 
   return (
+    <>
+      {loading ? (
+        <TechLoading />
+      ) : (
     <ReactECharts
       option={getOption()}
       style={{ height: '300px', width: '100%' }}
       className="react-echarts"
     />
+      )}
+    </>
   );
 };
 
@@ -1445,11 +1576,193 @@ const WhaleInflowCollectionsChart: React.FC<{
   timeRange: 'day' | 'week' | 'month',
   whaleType: 'all' | 'smart' | 'dumb'
 }> = ({ timeRange, whaleType }) => {
+  // 状态管理
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
   // 获取图表数据
-  const getChartData = () => {
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // 选择合适的数据表
+        let database = 'ads';
+        let table = 'ads_tracking_whale_collection_flow'; // 默认表
+        
+        // 根据鲸鱼类型选择不同的表
+        if (whaleType === 'smart') {
+          table = 'ads_smart_whale_collection_flow';
+        } else if (whaleType === 'dumb') {
+          table = 'ads_dumb_whale_collection_flow';
+        }
+        
+        console.log(`尝试从 ${database}.${table} 获取鲸鱼净流入数据...`);
+        
+        // 从数据湖获取数据
+        const response: any = await dataLakeApi.queryTableData(database, table, 1000);
+        
+        console.log('数据湖API返回的原始数据:', response);
+        
+        // 正确处理响应数据（response直接就是数组）
+        if (response && Array.isArray(response) && response.length > 0) {
+          // 输出第一条记录的所有字段，帮助调试
+          console.log('数据湖返回的第一条记录字段:', Object.keys(response[0]));
+          console.log('数据湖返回的第一条记录值:', response[0]);
+          
+          // 根据时间范围筛选数据
+          let filteredData = [...response]; // 创建数组副本
+          
+          // 根据rank_timerange字段筛选
+          const timeRangeMap: {[key: string]: string} = {
+            'day': 'DAY',
+            'week': '7DAYS',
+            'month': '30DAYS'
+          };
+          const targetTimeRange = timeRangeMap[timeRange];
+          
+          console.log('筛选目标时间范围:', targetTimeRange);
+          
+          // 检查是否有flow_direction字段，如果没有，则直接按rank_timerange筛选
+          const hasFlowDirectionField = response[0].hasOwnProperty('flow_direction');
+          
+          if (hasFlowDirectionField) {
+            filteredData = filteredData.filter((item: any) => 
+              item.rank_timerange === targetTimeRange && 
+              item.flow_direction === 'INFLOW'
+            );
+            console.log(`按rank_timerange=${targetTimeRange}和flow_direction=INFLOW筛选后数据:`, filteredData.length);
+          } else {
+            filteredData = filteredData.filter((item: any) => 
+              item.rank_timerange === targetTimeRange
+            );
+            console.log(`按rank_timerange=${targetTimeRange}筛选后数据:`, filteredData.length);
+          }
+          
+          // 如果筛选后没有数据，尝试不进行flow_direction筛选
+          if (filteredData.length === 0 && hasFlowDirectionField) {
+            filteredData = response.filter((item: any) => item.rank_timerange === targetTimeRange);
+            console.log(`重新只按rank_timerange=${targetTimeRange}筛选后数据:`, filteredData.length);
+          }
+          
+          // 如果仍然没有数据，使用所有数据
+          if (filteredData.length === 0) {
+            filteredData = response;
+            console.log('筛选后无数据，使用所有数据:', filteredData.length);
+          }
+          
+          // 获取适当的净流量字段名
+          let netFlowField = '';
+          if (timeRange === 'day') {
+            netFlowField = 'net_flow_eth'; // 尝试以下字段之一
+          } else if (timeRange === 'week') {
+            netFlowField = 'net_flow_7d_eth'; // 7天净流量
+          } else {
+            netFlowField = 'net_flow_30d_eth'; // 30天净流量
+          }
+          
+          // 如果指定字段不存在，尝试使用通用字段
+          if (!response[0].hasOwnProperty(netFlowField)) {
+            netFlowField = 'net_flow_eth';
+            console.log(`指定字段 ${netFlowField} 不存在，使用通用字段 net_flow_eth`);
+          }
+          
+          console.log(`使用净流量字段: ${netFlowField}`);
+          
+          // 获取智能/愚蠢鲸鱼字段前缀
+          let fieldPrefix = '';
+          if (whaleType === 'smart') {
+            fieldPrefix = 'smart_whale_';
+          } else if (whaleType === 'dumb') {
+            fieldPrefix = 'dumb_whale_';
+          }
+          
+          // 完整的净流量字段名
+          const fullNetFlowField = fieldPrefix ? fieldPrefix + netFlowField : netFlowField;
+          
+          console.log(`最终使用的净流量字段: ${fullNetFlowField}`);
+          
+          // 按照净流入量排序并获取前10
+          let sortedData = filteredData.sort((a: any, b: any) => {
+            // 获取流量值，根据是否有指定字段决定使用哪个字段
+            let fieldA, fieldB;
+            
+            if (a.hasOwnProperty(fullNetFlowField) && b.hasOwnProperty(fullNetFlowField)) {
+              fieldA = Math.abs(a[fullNetFlowField]) || 0;
+              fieldB = Math.abs(b[fullNetFlowField]) || 0;
+            } else if (a.hasOwnProperty(netFlowField) && b.hasOwnProperty(netFlowField)) {
+              fieldA = Math.abs(a[netFlowField]) || 0;
+              fieldB = Math.abs(b[netFlowField]) || 0;
+            } else if (a.hasOwnProperty('net_flow_eth') && b.hasOwnProperty('net_flow_eth')) {
+              fieldA = Math.abs(a.net_flow_eth) || 0;
+              fieldB = Math.abs(b.net_flow_eth) || 0;
+            } else {
+              // 如果没有找到匹配的字段，尝试使用rank_num
+              fieldA = -(a.rank_num || 999); // 通过负数转换，使rank_num小的排前面
+              fieldB = -(b.rank_num || 999);
+            }
+            
+            return fieldB - fieldA; // 降序排序
+          }).slice(0, 10);
+
+          console.log('排序后的前10条数据:', sortedData);
+
+          // 格式化数据以适应图表
+          const formattedData = sortedData.map((item: any) => {
+            let value = 0;
+            
+            // 尝试获取净流入金额
+            if (item.hasOwnProperty(fullNetFlowField)) {
+              value = Math.abs(item[fullNetFlowField]) * 2000; // ETH价格为2000美元
+            } else if (item.hasOwnProperty(netFlowField)) {
+              value = Math.abs(item[netFlowField]) * 2000;
+            } else if (item.hasOwnProperty('net_flow_eth')) {
+              value = Math.abs(item.net_flow_eth) * 2000;
+            } else {
+              // 如果没有找到匹配的字段，使用排名的反比例作为值
+              value = (100 - (item.rank_num || 0)) * 100000 / 100;
+            }
+            
+            // 取值下限为100，确保有显示效果
+            if (value < 100) value = 100;
+            
+            return {
+              name: item.collection_name || '未知收藏集',
+              value: value,
+              icon: item.collection_address || item.collection_name || 'UNKNOWN',
+              logoUrl: item.logo_url,
+              rank: item.rank_num
+            };
+          });
+          
+          console.log('最终格式化的图表数据:', formattedData);
+          setChartData(formattedData);
+          setError(null); // 数据加载成功，清除错误状态
+        } else {
+          console.error('数据格式不正确或为空:', response);
+          setError('数据格式不正确或为空');
+          // 使用备用模拟数据
+          setChartData(getBackupData());
+        }
+      } catch (err) {
+        console.error('获取数据失败:', err);
+        setError('获取数据失败');
+        // 使用备用模拟数据
+        setChartData(getBackupData());
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchData();
+  }, [timeRange, whaleType]); // 时间范围或鲸鱼类型变化时重新获取数据
+
+  // 备用模拟数据，当API调用失败时使用
+  const getBackupData = () => {
     // 基础数据集
     let baseData: { name: string; value: number; icon: string }[] = [];
-    
+
     // 根据时间范围选择基础数据集
     if (timeRange === 'day') {
       baseData = [
@@ -1491,12 +1804,12 @@ const WhaleInflowCollectionsChart: React.FC<{
         { name: 'Goblintown', value: 980000, icon: 'Goblintown' }
       ];
     }
-    
+
     // 根据鲸鱼类型进一步筛选和调整数据
     if (whaleType === 'smart') {
       // 聪明鲸鱼通常会选择优质项目，且在早期进入
       return baseData.map(item => {
-        const multiplier = ['CryptoPunks', 'BAYC', 'Azuki', 'Moonbirds', 'CloneX'].includes(item.name) 
+        const multiplier = ['CryptoPunks', 'BAYC', 'Azuki', 'Moonbirds', 'CloneX'].includes(item.name)
           ? 1.4  // 优质蓝筹项目加成
           : 0.7; // 其他项目减成
         return {
@@ -1507,7 +1820,7 @@ const WhaleInflowCollectionsChart: React.FC<{
     } else if (whaleType === 'dumb') {
       // 愚蠢鲸鱼通常会错过优质项目或买在顶部
       const dumbData = baseData.map(item => {
-        const multiplier = ['Goblintown', 'Cool Cats', 'Meebits', 'Doodles'].includes(item.name) 
+        const multiplier = ['Goblintown', 'Cool Cats', 'Meebits', 'Doodles'].includes(item.name)
           ? 1.6  // 投机性项目加成
           : 0.5; // 蓝筹项目减成
         return {
@@ -1540,38 +1853,112 @@ const WhaleInflowCollectionsChart: React.FC<{
   };
 
   // 获取图标URL的函数
-  const getIconUrl = (collection: string) => {
-    const collections: {[key: string]: string} = {
-      'BAYC': 'https://i.seadn.io/gae/Ju9CkWtV-1Okvf45wo8UctR-M9He2PjILP0oOvxE89AyiPPGtrR3gysu1Zgy0hjd2xKIgjJJtWIc0ybj4Vd7wv8t3pxDGHoJBzDB?auto=format&dpr=1&w=256',
-      'Azuki': 'https://i.seadn.io/gae/H8jOCJuQokNqGBpkBN5wk1oZwO7LM8bNnrHCaekV2nKjnCqw6UB5oaH8XyNeBDj6bA_n1mjejzhFQUP3O1NfjFLHr3FOaeHcTOOT?auto=format&dpr=1&w=256',
-      'CryptoPunks': 'https://i.seadn.io/gae/BdxvLseXcfl57BiuQcQYdJ64v-aI8din7WPk0Pgo3qQFhAUH-B6i-dCqqc_mCkRIzULmwzwecnohLhrcH8A9mpWIZqA7ygc52Sr81hE?auto=format&dpr=1&w=256',
-      'Doodles': 'https://i.seadn.io/gae/7B0qai02OdHA8P_EOVK672qUliyjQdQDGNrACxs7WnTgZAkJa_wWURnIFKeOh5VTf8cfTqW3wQpozGEJpJpJnv_DqHDFWxcQplRFyw?auto=format&dpr=1&w=256',
-      'CloneX': 'https://i.seadn.io/gae/XN0XuD8Uh3jyRWNtPTFeXJg_ht8m5ofDx6aHklOiy4amhFuWUa0JaR6It49AH8tlnYS386Q0TW_-Lmedn0UET_ko1a3CbJGeu5iHMg?auto=format&dpr=1&w=256',
-      'MAYC': 'https://i.seadn.io/gae/lHexKRMpw-aoSyB1WdFBff5yfANLReFxHzt1DOj_sg7mS14yARpuvYcUtsyyx-Nkpk6WTcUPFoG53VnLJezYi8hAs0OxNZwlw6Y-dmI?auto=format&dpr=1&w=256',
-      'Moonbirds': 'https://i.seadn.io/gae/H-eyNE1MwL5ohL-tCfn_Xa1Sl9M9B4612tLYeUlQubzt4ewhr4huJIR5OLuyO3Z5PpJFSwdm7rq-TikAh7f5eUw338A2cy6HRH75?auto=format&dpr=1&w=256',
-      'Pudgy Penguins': 'https://i.seadn.io/gae/yNi-XdGxsgQCPpqSio4o31ygAV6wURdIdInWRcFIl46UjUQ1eV7BEndGe8L661OoG-clRi7EgInLX4LPu9Jfw4fq0bnVYHqIDgOa?auto=format&dpr=1&w=256',
-      // 新增收藏集图标
-      'Otherdeeds': 'https://i.seadn.io/gae/yIm-M5-BpSDdTEIJRt5D6xphizhIdozXjqSITgK4phWq7MmAU3qE7Nw7POGCiPGyhtJ3ZFP8iJ29TFl-RLcGBWX5qI4-ZcnCPcsY4zI?auto=format&dpr=1&w=256',
-      'WoW': 'https://i.seadn.io/gae/EFAQpIktMraCrs8YLJy_FgjN9jOJW-O6cAZr9eriPZdkKvhJWEdre9wZOxTZL84HJN0GZxwNJXVPOZ8OQfYxgUMnR2JmrpdtWRK1?auto=format&dpr=1&w=256',
-      'CyberKongz': 'https://i.seadn.io/gae/LIpf9z6Ux8uxn69auBME9FCTXpXqSYFo8ZLO1GaM8T7S3hiKScHaClXe0ZdhTv5br6FE2g5i-J5SobhKFsYfe6CIMCv-UfnrlYFWOM4?auto=format&dpr=1&w=256',
-      'Cool Cats': 'https://i.seadn.io/gae/LIov33kogXOK4XZd2ESj29sqm_Hww5JSdO7AFn5wjt8xgnJJ0UpNV9yITqxra3s_LMEW1AnnrgOVB_hDpjJRA1uF4skI5Sdi_9rULi8?auto=format&dpr=1&w=256',
-      'Meebits': 'https://i.seadn.io/gae/d784iHHbqQFVH1XYD6HoT4u3y_Fsu_9FZUltWjnOzoYv7qqB5dLUqpOJ16kTQAGr-NORVYHOwzOqRkigvUrYoBCYAAltp8Zf-ZV3?auto=format&dpr=1&w=256',
-      'Cryptoadz': 'https://i.seadn.io/gae/iofetZEyiEIGcNyJKpbOafb_efJyeo7QOYnTog8qcQJhqoBU-Vu7mnijXM7SouWRtHKCuLIC9XDcGILXfyg0bnBZ6IPrWMA5VaCgygE?auto=format&dpr=1&w=256',
-      'Goblintown': 'https://i.seadn.io/gae/cb_wdEAmvry_noTCq1EDPD3eF04Wg3YxHPzGW9QjIjX9-hU-Q5y_rLpbEWhnmcSuYWRiV7bjZ6T41w8tgMqjEIHFWzG_AQT-qm1KnKU?auto=format&dpr=1&w=256'
-    };
+  const getIconUrl = (collection: string, logoUrl?: string) => {
+    // 如果有logo_url字段，优先使用
+    if (logoUrl && logoUrl.startsWith('http')) {
+      return logoUrl;
+    }
     
-    return collections[collection] || 'https://i.seadn.io/gae/Ju9CkWtV-1Okvf45wo8UctR-M9He2PjILP0oOvxE89AyiPPGtrR3gysu1Zgy0hjd2xKIgjJJtWIc0ybj4Vd7wv8t3pxDGHoJBzDB?auto=format&dpr=1&w=1000';
+    // 标准化集合名称（转为小写并移除空格）以便更好地匹配
+    const normalizedCollection = collection.toLowerCase().replace(/\s+/g, '');
+    
+    const collections: { [key: string]: string } = {
+      'bayc': 'https://i.seadn.io/gae/Ju9CkWtV-1Okvf45wo8UctR-M9He2PjILP0oOvxE89AyiPPGtrR3gysu1Zgy0hjd2xKIgjJJtWIc0ybj4Vd7wv8t3pxDGHoJBzDB?auto=format&dpr=1&w=256',
+      'azuki': 'https://i.seadn.io/gae/H8jOCJuQokNqGBpkBN5wk1oZwO7LM8bNnrHCaekV2nKjnCqw6UB5oaH8XyNeBDj6bA_n1mjejzhFQUP3O1NfjFLHr3FOaeHcTOOT?auto=format&dpr=1&w=256',
+      'cryptopunks': 'https://i.seadn.io/gae/BdxvLseXcfl57BiuQcQYdJ64v-aI8din7WPk0Pgo3qQFhAUH-B6i-dCqqc_mCkRIzULmwzwecnohLhrcH8A9mpWIZqA7ygc52Sr81hE?auto=format&dpr=1&w=256',
+      'doodles': 'https://i.seadn.io/gae/7B0qai02OdHA8P_EOVK672qUliyjQdQDGNrACxs7WnTgZAkJa_wWURnIFKeOh5VTf8cfTqW3wQpozGEJpJpJnv_DqHDFWxcQplRFyw?auto=format&dpr=1&w=256',
+      'clonex': 'https://i.seadn.io/gae/XN0XuD8Uh3jyRWNtPTFeXJg_ht8m5ofDx6aHklOiy4amhFuWUa0JaR6It49AH8tlnYS386Q0TW_-Lmedn0UET_ko1a3CbJGeu5iHMg?auto=format&dpr=1&w=256',
+      'mayc': 'https://i.seadn.io/gae/lHexKRMpw-aoSyB1WdFBff5yfANLReFxHzt1DOj_sg7mS14yARpuvYcUtsyyx-Nkpk6WTcUPFoG53VnLJezYi8hAs0OxNZwlw6Y-dmI?auto=format&dpr=1&w=256',
+      'moonbirds': 'https://i.seadn.io/gae/H-eyNE1MwL5ohL-tCfn_Xa1Sl9M9B4612tLYeUlQubzt4ewhr4huJIR5OLuyO3Z5PpJFSwdm7rq-TikAh7f5eUw338A2cy6HRH75?auto=format&dpr=1&w=256',
+      'pudgypenguins': 'https://i.seadn.io/gae/yNi-XdGxsgQCPpqSio4o31ygAV6wURdIdInWRcFIl46UjUQ1eV7BEndGe8L661OoG-clRi7EgInLX4LPu9Jfw4fq0bnVYHqIDgOa?auto=format&dpr=1&w=256',
+      'otherdeeds': 'https://i.seadn.io/gae/yIm-M5-BpSDdTEIJRt5D6xphizhIdozXjqSITgK4phWq7MmAU3qE7Nw7POGCiPGyhtJ3ZFP8iJ29TFl-RLcGBWX5qI4-ZcnCPcsY4zI?auto=format&dpr=1&w=256',
+      'wow': 'https://i.seadn.io/gae/EFAQpIktMraCrs8YLJy_FgjN9jOJW-O6cAZr9eriPZdkKvhJWEdre9wZOxTZL84HJN0GZxwNJXVPOZ8OQfYxgUMnR2JmrpdtWRK1?auto=format&dpr=1&w=256',
+      'cyberkongz': 'https://i.seadn.io/gae/LIpf9z6Ux8uxn69auBME9FCTXpXqSYFo8ZLO1GaM8T7S3hiKScHaClXe0ZdhTv5br6FE2g5i-J5SobhKFsYfe6CIMCv-UfnrlYFWOM4?auto=format&dpr=1&w=256',
+      'coolcats': 'https://i.seadn.io/gae/LIov33kogXOK4XZd2ESj29sqm_Hww5JSdO7AFn5wjt8xgnJJ0UpNV9yITqxra3s_LMEW1AnnrgOVB_hDpjJRA1uF4skI5Sdi_9rULi8?auto=format&dpr=1&w=256',
+      'meebits': 'https://i.seadn.io/gae/d784iHHbqQFVH1XYD6HoT4u3y_Fsu_9FZUltWjnOzoYv7qqB5dLUqpOJ16kTQAGr-NORVYHOwzOqRkigvUrYoBCYAAltp8Zf-ZV3?auto=format&dpr=1&w=256',
+      'cryptoadz': 'https://i.seadn.io/gae/iofetZEyiEIGcNyJKpbOafb_efJyeo7QOYnTog8qcQJhqoBU-Vu7mnijXM7SouWRtHKCuLIC9XDcGILXfyg0bnBZ6IPrWMA5VaCgygE?auto=format&dpr=1&w=256',
+      'goblintown': 'https://i.seadn.io/gae/cb_wdEAmvry_noTCq1EDPD3eF04Wg3YxHPzGW9QjIjX9-hU-Q5y_rLpbEWhnmcSuYWRiV7bjZ6T41w8tgMqjEIHFWzG_AQT-qm1KnKU?auto=format&dpr=1&w=256',
+      'degods': 'https://i.seadn.io/gae/FVTsD1oMUJHZiBkMibDgXimXQnJzYM9XxoMxTMR-JzHIQW-FGb0jlDfNTRbGZQBgQMKy6oVYDiCDfGTcSUAWatIKcGy4LMrAYnYl?auto=format&dpr=1&w=256',
+      'milady': 'https://i.seadn.io/gae/a_frplnavZA9g4vN3SexO5rrtaBX_cBTaJYcgrPtwQIqPhzgzUendQxiwUdr51CGPE2QyPEa1DHnkW1wLrHAv5DgfC3BP-CRqDIVfGo?auto=format&dpr=1&w=256',
+      'boredapeyachtclub': 'https://i.seadn.io/gae/Ju9CkWtV-1Okvf45wo8UctR-M9He2PjILP0oOvxE89AyiPPGtrR3gysu1Zgy0hjd2xKIgjJJtWIc0ybj4Vd7wv8t3pxDGHoJBzDB?auto=format&dpr=1&w=256',
+      'mutantapeyachtclub': 'https://i.seadn.io/gae/lHexKRMpw-aoSyB1WdFBff5yfANLReFxHzt1DOj_sg7mS14yARpuvYcUtsyyx-Nkpk6WTcUPFoG53VnLJezYi8hAs0OxNZwlw6Y-dmI?auto=format&dpr=1&w=256',
+      'fidenza': 'https://i.seadn.io/gae/yNi-XdGxsgQCPpqSio4o31ygAV6wURdIdInWRcFIl46UjUQ1eV7BEndGe8L661OoG-clRi7EgInLX4LPu9Jfw4fq0bnVYHqIDgOa?auto=format&dpr=1&w=256',
+      'chromiesquiggle': 'https://i.seadn.io/gae/0qG8Y78s198F2R0xTOhje0UeK7GWpgKdLTdL2NF8e_siutxvxE5wNKoH_5XgLvCcB-jOq6hbidLuFAr2rzQBQkYNwu6_tUJhGnyom4I?auto=format&dpr=1&w=256',
+      'autoglyphs': 'https://i.seadn.io/gae/JYz5dU8xK0FCzFp4NiOGkZGzVB77JQ2PMz9tMr7N2em9mvg8BpWHReqQOOK8RXwEMJbUqSY3ZFZyQB3c0jZ-lBb-MaijEOYc9bvzMA?auto=format&dpr=1&w=256',
+      'nouns': 'https://i.seadn.io/gae/dQQcSXxzJJBw2FXB-aZFh-jAXrGWss2RfZxDY4Ykr8uqJT8-cY1FJR9cq9qMXmUtKK9GBEEzZ7kTXKd_iBDxT3lw1XwWT-wB3FveqA?auto=format&dpr=1&w=256',
+      'loot': 'https://i.seadn.io/gae/Nhz0VbI2GV_PfS_9LDpwJzpH6xxbx0Mxoz2WwXNxmiifeI-JxgJZXD5IutgNTYZEYc3mB73MTJKc7G_9Hbv5ArjnWqpZ6-1wBYx0IQ?auto=format&dpr=1&w=256',
+      'hope': 'https://i.seadn.io/gcs/files/2d058acad86d29a218bd1fba24e9eb28.png?auto=format&dpr=1&w=256'
+    };
+
+    // 处理特殊情况
+    if (normalizedCollection.includes('bored') && normalizedCollection.includes('ape')) return collections['bayc'];
+    if (normalizedCollection.includes('mutant') && normalizedCollection.includes('ape')) return collections['mayc'];
+    if (normalizedCollection.includes('cool') && normalizedCollection.includes('cat')) return collections['coolcats'];
+    if (normalizedCollection.includes('cyber') && normalizedCollection.includes('kong')) return collections['cyberkongz'];
+    if (normalizedCollection.includes('pudgy')) return collections['pudgypenguins'];
+    if (normalizedCollection.includes('cryptopunk')) return collections['cryptopunks'];
+    
+    // 检查集合名称是否存在，不区分大小写
+    for (const [key, url] of Object.entries(collections)) {
+      if (normalizedCollection.includes(key.toLowerCase())) {
+        return url;
+      }
+    }
+
+    // 检查是否有匹配的图标，如果没有，尝试模糊匹配
+    if (collections[normalizedCollection]) {
+      return collections[normalizedCollection];
+    }
+    
+    // 尝试部分匹配
+    for (const [key, url] of Object.entries(collections)) {
+      if (normalizedCollection.includes(key) || key.includes(normalizedCollection)) {
+        return url;
+      }
+    }
+
+    // 如果找不到匹配的图标，使用默认图标
+    const defaultLogo = 'https://i.seadn.io/gae/Ju9CkWtV-1Okvf45wo8UctR-M9He2PjILP0oOvxE89AyiPPGtrR3gysu1Zgy0hjd2xKIgjJJtWIc0ybj4Vd7wv8t3pxDGHoJBzDB?auto=format&dpr=1&w=256';
+    console.log(`未找到"${collection}"的图标，使用默认图标`);
+    return defaultLogo;
   };
 
   // 准备ECharts配置
   const getOption = () => {
-    const data = getChartData();
+    if (loading) {
+      return {
+        title: {
+          text: '加载中...',
+          left: 'center',
+          textStyle: {
+            color: '#fff'
+          }
+        }
+      };
+    }
+
+    // 即使有错误状态，如果chartData有数据，优先使用实际数据
+    const data = chartData.length > 0 ? chartData : getBackupData();
+    
+    // 仅在没有实际数据且有错误时才显示错误提示
+    if (error && chartData.length === 0) {
+      return {
+        title: {
+          text: '数据加载失败，显示备用数据',
+          left: 'center',
+          textStyle: {
+            color: '#fff'
+          }
+        }
+      };
+    }
+    
     // 数据排序
     data.sort((a, b) => a.value - b.value);
-    
+
     // 准备图标配置
-    const icons = data.map(item => getIconUrl(item.icon));
-    
+    const icons = data.map(item => getIconUrl(item.icon, item.logoUrl));
+
     // 美化：创建渐变色系
     const colors = [
       ['#1890ff', '#36cfff'], // 蓝色渐变
@@ -1587,6 +1974,9 @@ const WhaleInflowCollectionsChart: React.FC<{
     ];
 
     return {
+      title: {
+        show: false // 不显示标题
+      },
       tooltip: {
         trigger: 'axis',
         axisPointer: {
@@ -1595,18 +1985,18 @@ const WhaleInflowCollectionsChart: React.FC<{
             color: 'rgba(24, 144, 255, 0.1)'
           }
         },
-        formatter: function(params: any) {
+        formatter: function (params: any) {
           const dataIndex = params[0].dataIndex;
           // 确保data是已定义的
           if (!data || !data[dataIndex]) return '';
-          
+
           const value = data[dataIndex].value;
           const formattedValue = new Intl.NumberFormat('en-US', {
             style: 'currency',
             currency: 'USD',
             maximumFractionDigits: 0
           }).format(value);
-          
+
           return `<div style="display: flex; align-items: center; padding: 8px 12px;">
                    <img src="${icons[dataIndex]}" style="width: 32px; height: 32px; margin-right: 12px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);" />
                    <div>
@@ -1634,7 +2024,7 @@ const WhaleInflowCollectionsChart: React.FC<{
       xAxis: {
         type: 'value',
         axisLabel: {
-          formatter: function(value: number) {
+          formatter: function (value: number) {
             if (value >= 1000000) {
               return '$' + (value / 1000000).toFixed(1) + 'M';
             } else if (value >= 1000) {
@@ -1667,7 +2057,7 @@ const WhaleInflowCollectionsChart: React.FC<{
         type: 'category',
         data: data.map(item => ''),  // 空字符串，因为我们使用rich text显示图标
         axisLabel: {
-          formatter: function(value: string, index: number) {
+          formatter: function (value: string, index: number) {
             return '{icon' + index + '|}';
           },
           rich: data.reduce((acc: any, item, index) => {
@@ -1730,7 +2120,7 @@ const WhaleInflowCollectionsChart: React.FC<{
           label: {
             show: true,
             position: 'insideRight',
-            formatter: function(params: any) {
+            formatter: function (params: any) {
               const dataIndex = params.dataIndex;
               // 确保data是已定义的
               if (!data || !data[dataIndex]) return '';
@@ -1748,13 +2138,13 @@ const WhaleInflowCollectionsChart: React.FC<{
               shadowColor: 'rgba(0, 0, 0, 0.3)'
             }
           },
-          animationDelay: function(idx: number) {
+          animationDelay: function (idx: number) {
             return idx * 100;
           }
         }
       ],
       animationEasing: 'elasticOut',
-      animationDelayUpdate: function(idx: number) {
+      animationDelayUpdate: function (idx: number) {
         return idx * 5;
       },
       animationDuration: 1500
@@ -1762,11 +2152,14 @@ const WhaleInflowCollectionsChart: React.FC<{
   };
 
   return (
+    <div className="whale-inflow-chart">
+      {loading && <TechLoading />}
     <ReactECharts
       option={getOption()}
       style={{ height: '400px', width: '100%' }}
       className="react-echarts"
     />
+    </div>
   );
 };
 
@@ -1775,11 +2168,193 @@ const WhaleOutflowCollectionsChart: React.FC<{
   timeRange: 'day' | 'week' | 'month',
   whaleType: 'all' | 'smart' | 'dumb'
 }> = ({ timeRange, whaleType }) => {
+  // 状态管理
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
   // 获取图表数据
-  const getChartData = () => {
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // 选择合适的数据表
+        let database = 'ads';
+        let table = 'ads_tracking_whale_collection_flow'; // 默认表
+        
+        // 根据鲸鱼类型选择不同的表
+        if (whaleType === 'smart') {
+          table = 'ads_smart_whale_collection_flow';
+        } else if (whaleType === 'dumb') {
+          table = 'ads_dumb_whale_collection_flow';
+        }
+        
+        console.log(`尝试从 ${database}.${table} 获取鲸鱼净流出数据...`);
+        
+        // 从数据湖获取数据
+        const response: any = await dataLakeApi.queryTableData(database, table, 1000);
+        
+        console.log('数据湖API返回的原始数据(流出):', response);
+        
+        // 正确处理响应数据（response直接就是数组）
+        if (response && Array.isArray(response) && response.length > 0) {
+          // 输出第一条记录的所有字段，帮助调试
+          console.log('数据湖返回的第一条记录字段(流出):', Object.keys(response[0]));
+          console.log('数据湖返回的第一条记录值(流出):', response[0]);
+          
+          // 根据时间范围筛选数据
+          let filteredData = [...response]; // 创建数组副本
+          
+          // 根据rank_timerange字段筛选
+          const timeRangeMap: {[key: string]: string} = {
+            'day': 'DAY',
+            'week': '7DAYS',
+            'month': '30DAYS'
+          };
+          const targetTimeRange = timeRangeMap[timeRange];
+          
+          console.log('筛选目标时间范围(流出):', targetTimeRange);
+          
+          // 检查是否有flow_direction字段，如果没有，则直接按rank_timerange筛选
+          const hasFlowDirectionField = response[0].hasOwnProperty('flow_direction');
+          
+          if (hasFlowDirectionField) {
+            filteredData = filteredData.filter((item: any) => 
+              item.rank_timerange === targetTimeRange && 
+              item.flow_direction === 'OUTFLOW'
+            );
+            console.log(`按rank_timerange=${targetTimeRange}和flow_direction=OUTFLOW筛选后数据:`, filteredData.length);
+          } else {
+            filteredData = filteredData.filter((item: any) => 
+              item.rank_timerange === targetTimeRange
+            );
+            console.log(`按rank_timerange=${targetTimeRange}筛选后数据(流出):`, filteredData.length);
+          }
+          
+          // 如果筛选后没有数据，尝试不进行flow_direction筛选
+          if (filteredData.length === 0 && hasFlowDirectionField) {
+            filteredData = response.filter((item: any) => item.rank_timerange === targetTimeRange);
+            console.log(`重新只按rank_timerange=${targetTimeRange}筛选后数据(流出):`, filteredData.length);
+          }
+          
+          // 如果仍然没有数据，使用所有数据
+          if (filteredData.length === 0) {
+            filteredData = response;
+            console.log('筛选后无数据，使用所有数据(流出):', filteredData.length);
+          }
+          
+          // 获取适当的净流量字段名
+          let netFlowField = '';
+          if (timeRange === 'day') {
+            netFlowField = 'net_flow_eth'; // 尝试以下字段之一
+          } else if (timeRange === 'week') {
+            netFlowField = 'net_flow_7d_eth'; // 7天净流量
+          } else {
+            netFlowField = 'net_flow_30d_eth'; // 30天净流量
+          }
+          
+          // 如果指定字段不存在，尝试使用通用字段
+          if (!response[0].hasOwnProperty(netFlowField)) {
+            netFlowField = 'net_flow_eth';
+            console.log(`指定字段 ${netFlowField} 不存在，使用通用字段 net_flow_eth (流出)`);
+          }
+          
+          console.log(`使用净流量字段(流出): ${netFlowField}`);
+          
+          // 获取智能/愚蠢鲸鱼字段前缀
+          let fieldPrefix = '';
+          if (whaleType === 'smart') {
+            fieldPrefix = 'smart_whale_';
+          } else if (whaleType === 'dumb') {
+            fieldPrefix = 'dumb_whale_';
+          }
+          
+          // 完整的净流量字段名
+          const fullNetFlowField = fieldPrefix ? fieldPrefix + netFlowField : netFlowField;
+          
+          console.log(`最终使用的净流量字段(流出): ${fullNetFlowField}`);
+          
+          // 按照净流出量排序并获取前10
+          let sortedData = filteredData.sort((a: any, b: any) => {
+            // 获取流量值，根据是否有指定字段决定使用哪个字段
+            let fieldA, fieldB;
+            
+            if (a.hasOwnProperty(fullNetFlowField) && b.hasOwnProperty(fullNetFlowField)) {
+              fieldA = Math.abs(a[fullNetFlowField]) || 0;
+              fieldB = Math.abs(b[fullNetFlowField]) || 0;
+            } else if (a.hasOwnProperty(netFlowField) && b.hasOwnProperty(netFlowField)) {
+              fieldA = Math.abs(a[netFlowField]) || 0;
+              fieldB = Math.abs(b[netFlowField]) || 0;
+            } else if (a.hasOwnProperty('net_flow_eth') && b.hasOwnProperty('net_flow_eth')) {
+              fieldA = Math.abs(a.net_flow_eth) || 0;
+              fieldB = Math.abs(b.net_flow_eth) || 0;
+            } else {
+              // 如果没有找到匹配的字段，尝试使用rank_num
+              fieldA = -(a.rank_num || 999); // 通过负数转换，使rank_num小的排前面
+              fieldB = -(b.rank_num || 999);
+            }
+            
+            return fieldB - fieldA; // 降序排序
+          }).slice(0, 10);
+
+          console.log('排序后的前10条数据(流出):', sortedData);
+
+          // 格式化数据以适应图表
+          const formattedData = sortedData.map((item: any) => {
+            let value = 0;
+            
+            // 尝试获取净流出金额
+            if (item.hasOwnProperty(fullNetFlowField)) {
+              value = Math.abs(item[fullNetFlowField]) * 2000; // ETH价格为2000美元
+            } else if (item.hasOwnProperty(netFlowField)) {
+              value = Math.abs(item[netFlowField]) * 2000;
+            } else if (item.hasOwnProperty('net_flow_eth')) {
+              value = Math.abs(item.net_flow_eth) * 2000;
+            } else {
+              // 如果没有找到匹配的字段，使用排名的反比例作为值
+              value = (100 - (item.rank_num || 0)) * 100000 / 100;
+            }
+            
+            // 取值下限为100，确保有显示效果
+            if (value < 100) value = 100;
+            
+            return {
+              name: item.collection_name || '未知收藏集',
+              value: value,
+              icon: item.collection_address || item.collection_name || 'UNKNOWN',
+              logoUrl: item.logo_url,
+              rank: item.rank_num
+            };
+          });
+          
+          console.log('最终格式化的图表数据(流出):', formattedData);
+          setChartData(formattedData);
+          setError(null); // 数据加载成功，清除错误状态
+        } else {
+          console.error('数据格式不正确或为空(流出):', response);
+          setError('数据格式不正确或为空');
+          // 使用备用模拟数据
+          setChartData(getBackupData());
+        }
+      } catch (err) {
+        console.error('获取数据失败(流出):', err);
+        setError('获取数据失败');
+        // 使用备用模拟数据
+        setChartData(getBackupData());
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchData();
+  }, [timeRange, whaleType]); // 时间范围或鲸鱼类型变化时重新获取数据
+
+  // 备用模拟数据，当API调用失败时使用
+  const getBackupData = () => {
     // 基础数据集 - 流出数据与流入数据略有不同
     let baseData: { name: string; value: number; icon: string }[] = [];
-    
+
     // 根据时间范围选择基础数据集
     if (timeRange === 'day') {
       baseData = [
@@ -1821,12 +2396,12 @@ const WhaleOutflowCollectionsChart: React.FC<{
         { name: 'Goblintown', value: 880000, icon: 'Goblintown' }
       ];
     }
-    
+
     // 根据鲸鱼类型进一步筛选和调整数据
     if (whaleType === 'smart') {
       // 聪明鲸鱼通常会选择在高点卖出优质项目
       return baseData.map(item => {
-        const multiplier = ['CryptoPunks', 'BAYC', 'Azuki', 'Moonbirds', 'CloneX'].includes(item.name) 
+        const multiplier = ['CryptoPunks', 'BAYC', 'Azuki', 'Moonbirds', 'CloneX'].includes(item.name)
           ? 1.6  // 优质蓝筹项目加成
           : 0.6; // 其他项目减成
         return {
@@ -1837,7 +2412,7 @@ const WhaleOutflowCollectionsChart: React.FC<{
     } else if (whaleType === 'dumb') {
       // 愚蠢鲸鱼通常会在低点卖出蓝筹项目
       const dumbData = baseData.map(item => {
-        const multiplier = ['Goblintown', 'Cool Cats', 'Meebits', 'Doodles'].includes(item.name) 
+        const multiplier = ['Goblintown', 'Cool Cats', 'Meebits', 'Doodles'].includes(item.name)
           ? 1.2  // 投机性项目普通卖出
           : 0.8; // 蓝筹项目在低点卖出
         return {
@@ -1870,52 +2445,130 @@ const WhaleOutflowCollectionsChart: React.FC<{
   };
 
   // 获取图标URL的函数
-  const getIconUrl = (collection: string) => {
-    const collections: {[key: string]: string} = {
-      'BAYC': 'https://i.seadn.io/gae/Ju9CkWtV-1Okvf45wo8UctR-M9He2PjILP0oOvxE89AyiPPGtrR3gysu1Zgy0hjd2xKIgjJJtWIc0ybj4Vd7wv8t3pxDGHoJBzDB?auto=format&dpr=1&w=256',
-      'Azuki': 'https://i.seadn.io/gae/H8jOCJuQokNqGBpkBN5wk1oZwO7LM8bNnrHCaekV2nKjnCqw6UB5oaH8XyNeBDj6bA_n1mjejzhFQUP3O1NfjFLHr3FOaeHcTOOT?auto=format&dpr=1&w=256',
-      'CryptoPunks': 'https://i.seadn.io/gae/BdxvLseXcfl57BiuQcQYdJ64v-aI8din7WPk0Pgo3qQFhAUH-B6i-dCqqc_mCkRIzULmwzwecnohLhrcH8A9mpWIZqA7ygc52Sr81hE?auto=format&dpr=1&w=256',
-      'Doodles': 'https://i.seadn.io/gae/7B0qai02OdHA8P_EOVK672qUliyjQdQDGNrACxs7WnTgZAkJa_wWURnIFKeOh5VTf8cfTqW3wQpozGEJpJpJnv_DqHDFWxcQplRFyw?auto=format&dpr=1&w=256',
-      'CloneX': 'https://i.seadn.io/gae/XN0XuD8Uh3jyRWNtPTFeXJg_ht8m5ofDx6aHklOiy4amhFuWUa0JaR6It49AH8tlnYS386Q0TW_-Lmedn0UET_ko1a3CbJGeu5iHMg?auto=format&dpr=1&w=256',
-      'MAYC': 'https://i.seadn.io/gae/lHexKRMpw-aoSyB1WdFBff5yfANLReFxHzt1DOj_sg7mS14yARpuvYcUtsyyx-Nkpk6WTcUPFoG53VnLJezYi8hAs0OxNZwlw6Y-dmI?auto=format&dpr=1&w=256',
-      'Moonbirds': 'https://i.seadn.io/gae/H-eyNE1MwL5ohL-tCfn_Xa1Sl9M9B4612tLYeUlQubzt4ewhr4huJIR5OLuyO3Z5PpJFSwdm7rq-TikAh7f5eUw338A2cy6HRH75?auto=format&dpr=1&w=256',
-      'Pudgy Penguins': 'https://i.seadn.io/gae/yNi-XdGxsgQCPpqSio4o31ygAV6wURdIdInWRcFIl46UjUQ1eV7BEndGe8L661OoG-clRi7EgInLX4LPu9Jfw4fq0bnVYHqIDgOa?auto=format&dpr=1&w=256',
-      'Otherdeeds': 'https://i.seadn.io/gae/yIm-M5-BpSDdTEIJRt5D6xphizhIdozXjqSITgK4phWq7MmAU3qE7Nw7POGCiPGyhtJ3ZFP8iJ29TFl-RLcGBWX5qI4-ZcnCPcsY4zI?auto=format&dpr=1&w=256',
-      'WoW': 'https://i.seadn.io/gae/EFAQpIktMraCrs8YLJy_FgjN9jOJW-O6cAZr9eriPZdkKvhJWEdre9wZOxTZL84HJN0GZxwNJXVPOZ8OQfYxgUMnR2JmrpdtWRK1?auto=format&dpr=1&w=256',
-      'CyberKongz': 'https://i.seadn.io/gae/LIpf9z6Ux8uxn69auBME9FCTXpXqSYFo8ZLO1GaM8T7S3hiKScHaClXe0ZdhTv5br6FE2g5i-J5SobhKFsYfe6CIMCv-UfnrlYFWOM4?auto=format&dpr=1&w=256',
-      'Cool Cats': 'https://i.seadn.io/gae/LIov33kogXOK4XZd2ESj29sqm_Hww5JSdO7AFn5wjt8xgnJJ0UpNV9yITqxra3s_LMEW1AnnrgOVB_hDpjJRA1uF4skI5Sdi_9rULi8?auto=format&dpr=1&w=256',
-      'Meebits': 'https://i.seadn.io/gae/d784iHHbqQFVH1XYD6HoT4u3y_Fsu_9FZUltWjnOzoYv7qqB5dLUqpOJ16kTQAGr-NORVYHOwzOqRkigvUrYoBCYAAltp8Zf-ZV3?auto=format&dpr=1&w=256',
-      'Cryptoadz': 'https://i.seadn.io/gae/iofetZEyiEIGcNyJKpbOafb_efJyeo7QOYnTog8qcQJhqoBU-Vu7mnijXM7SouWRtHKCuLIC9XDcGILXfyg0bnBZ6IPrWMA5VaCgygE?auto=format&dpr=1&w=256',
-      'Goblintown': 'https://i.seadn.io/gae/cb_wdEAmvry_noTCq1EDPD3eF04Wg3YxHPzGW9QjIjX9-hU-Q5y_rLpbEWhnmcSuYWRiV7bjZ6T41w8tgMqjEIHFWzG_AQT-qm1KnKU?auto=format&dpr=1&w=256'
-    };
+  const getIconUrl = (collection: string, logoUrl?: string) => {
+    // 如果有logo_url字段，优先使用
+    if (logoUrl && logoUrl.startsWith('http')) {
+      return logoUrl;
+    }
     
-    return collections[collection] || '';
+    // 标准化集合名称（转为小写并移除空格）以便更好地匹配
+    const normalizedCollection = collection.toLowerCase().replace(/\s+/g, '');
+    
+    const collections: { [key: string]: string } = {
+      'bayc': 'https://i.seadn.io/gae/Ju9CkWtV-1Okvf45wo8UctR-M9He2PjILP0oOvxE89AyiPPGtrR3gysu1Zgy0hjd2xKIgjJJtWIc0ybj4Vd7wv8t3pxDGHoJBzDB?auto=format&dpr=1&w=256',
+      'azuki': 'https://i.seadn.io/gae/H8jOCJuQokNqGBpkBN5wk1oZwO7LM8bNnrHCaekV2nKjnCqw6UB5oaH8XyNeBDj6bA_n1mjejzhFQUP3O1NfjFLHr3FOaeHcTOOT?auto=format&dpr=1&w=256',
+      'cryptopunks': 'https://i.seadn.io/gae/BdxvLseXcfl57BiuQcQYdJ64v-aI8din7WPk0Pgo3qQFhAUH-B6i-dCqqc_mCkRIzULmwzwecnohLhrcH8A9mpWIZqA7ygc52Sr81hE?auto=format&dpr=1&w=256',
+      'doodles': 'https://i.seadn.io/gae/7B0qai02OdHA8P_EOVK672qUliyjQdQDGNrACxs7WnTgZAkJa_wWURnIFKeOh5VTf8cfTqW3wQpozGEJpJpJnv_DqHDFWxcQplRFyw?auto=format&dpr=1&w=256',
+      'clonex': 'https://i.seadn.io/gae/XN0XuD8Uh3jyRWNtPTFeXJg_ht8m5ofDx6aHklOiy4amhFuWUa0JaR6It49AH8tlnYS386Q0TW_-Lmedn0UET_ko1a3CbJGeu5iHMg?auto=format&dpr=1&w=256',
+      'mayc': 'https://i.seadn.io/gae/lHexKRMpw-aoSyB1WdFBff5yfANLReFxHzt1DOj_sg7mS14yARpuvYcUtsyyx-Nkpk6WTcUPFoG53VnLJezYi8hAs0OxNZwlw6Y-dmI?auto=format&dpr=1&w=256',
+      'moonbirds': 'https://i.seadn.io/gae/H-eyNE1MwL5ohL-tCfn_Xa1Sl9M9B4612tLYeUlQubzt4ewhr4huJIR5OLuyO3Z5PpJFSwdm7rq-TikAh7f5eUw338A2cy6HRH75?auto=format&dpr=1&w=256',
+      'pudgypenguins': 'https://i.seadn.io/gae/yNi-XdGxsgQCPpqSio4o31ygAV6wURdIdInWRcFIl46UjUQ1eV7BEndGe8L661OoG-clRi7EgInLX4LPu9Jfw4fq0bnVYHqIDgOa?auto=format&dpr=1&w=256',
+      'otherdeeds': 'https://i.seadn.io/gae/yIm-M5-BpSDdTEIJRt5D6xphizhIdozXjqSITgK4phWq7MmAU3qE7Nw7POGCiPGyhtJ3ZFP8iJ29TFl-RLcGBWX5qI4-ZcnCPcsY4zI?auto=format&dpr=1&w=256',
+      'wow': 'https://i.seadn.io/gae/EFAQpIktMraCrs8YLJy_FgjN9jOJW-O6cAZr9eriPZdkKvhJWEdre9wZOxTZL84HJN0GZxwNJXVPOZ8OQfYxgUMnR2JmrpdtWRK1?auto=format&dpr=1&w=256',
+      'cyberkongz': 'https://i.seadn.io/gae/LIpf9z6Ux8uxn69auBME9FCTXpXqSYFo8ZLO1GaM8T7S3hiKScHaClXe0ZdhTv5br6FE2g5i-J5SobhKFsYfe6CIMCv-UfnrlYFWOM4?auto=format&dpr=1&w=256',
+      'coolcats': 'https://i.seadn.io/gae/LIov33kogXOK4XZd2ESj29sqm_Hww5JSdO7AFn5wjt8xgnJJ0UpNV9yITqxra3s_LMEW1AnnrgOVB_hDpjJRA1uF4skI5Sdi_9rULi8?auto=format&dpr=1&w=256',
+      'meebits': 'https://i.seadn.io/gae/d784iHHbqQFVH1XYD6HoT4u3y_Fsu_9FZUltWjnOzoYv7qqB5dLUqpOJ16kTQAGr-NORVYHOwzOqRkigvUrYoBCYAAltp8Zf-ZV3?auto=format&dpr=1&w=256',
+      'cryptoadz': 'https://i.seadn.io/gae/iofetZEyiEIGcNyJKpbOafb_efJyeo7QOYnTog8qcQJhqoBU-Vu7mnijXM7SouWRtHKCuLIC9XDcGILXfyg0bnBZ6IPrWMA5VaCgygE?auto=format&dpr=1&w=256',
+      'goblintown': 'https://i.seadn.io/gae/cb_wdEAmvry_noTCq1EDPD3eF04Wg3YxHPzGW9QjIjX9-hU-Q5y_rLpbEWhnmcSuYWRiV7bjZ6T41w8tgMqjEIHFWzG_AQT-qm1KnKU?auto=format&dpr=1&w=256',
+      'degods': 'https://i.seadn.io/gae/FVTsD1oMUJHZiBkMibDgXimXQnJzYM9XxoMxTMR-JzHIQW-FGb0jlDfNTRbGZQBgQMKy6oVYDiCDfGTcSUAWatIKcGy4LMrAYnYl?auto=format&dpr=1&w=256',
+      'milady': 'https://i.seadn.io/gae/a_frplnavZA9g4vN3SexO5rrtaBX_cBTaJYcgrPtwQIqPhzgzUendQxiwUdr51CGPE2QyPEa1DHnkW1wLrHAv5DgfC3BP-CRqDIVfGo?auto=format&dpr=1&w=256',
+      'boredapeyachtclub': 'https://i.seadn.io/gae/Ju9CkWtV-1Okvf45wo8UctR-M9He2PjILP0oOvxE89AyiPPGtrR3gysu1Zgy0hjd2xKIgjJJtWIc0ybj4Vd7wv8t3pxDGHoJBzDB?auto=format&dpr=1&w=256',
+      'mutantapeyachtclub': 'https://i.seadn.io/gae/lHexKRMpw-aoSyB1WdFBff5yfANLReFxHzt1DOj_sg7mS14yARpuvYcUtsyyx-Nkpk6WTcUPFoG53VnLJezYi8hAs0OxNZwlw6Y-dmI?auto=format&dpr=1&w=256',
+      'fidenza': 'https://i.seadn.io/gae/yNi-XdGxsgQCPpqSio4o31ygAV6wURdIdInWRcFIl46UjUQ1eV7BEndGe8L661OoG-clRi7EgInLX4LPu9Jfw4fq0bnVYHqIDgOa?auto=format&dpr=1&w=256',
+      'chromiesquiggle': 'https://i.seadn.io/gae/0qG8Y78s198F2R0xTOhje0UeK7GWpgKdLTdL2NF8e_siutxvxE5wNKoH_5XgLvCcB-jOq6hbidLuFAr2rzQBQkYNwu6_tUJhGnyom4I?auto=format&dpr=1&w=256',
+      'autoglyphs': 'https://i.seadn.io/gae/JYz5dU8xK0FCzFp4NiOGkZGzVB77JQ2PMz9tMr7N2em9mvg8BpWHReqQOOK8RXwEMJbUqSY3ZFZyQB3c0jZ-lBb-MaijEOYc9bvzMA?auto=format&dpr=1&w=256',
+      'nouns': 'https://i.seadn.io/gae/dQQcSXxzJJBw2FXB-aZFh-jAXrGWss2RfZxDY4Ykr8uqJT8-cY1FJR9cq9qMXmUtKK9GBEEzZ7kTXKd_iBDxT3lw1XwWT-wB3FveqA?auto=format&dpr=1&w=256',
+      'loot': 'https://i.seadn.io/gae/Nhz0VbI2GV_PfS_9LDpwJzpH6xxbx0Mxoz2WwXNxmiifeI-JxgJZXD5IutgNTYZEYc3mB73MTJKc7G_9Hbv5ArjnWqpZ6-1wBYx0IQ?auto=format&dpr=1&w=256',
+      'hope': 'https://i.seadn.io/gcs/files/2d058acad86d29a218bd1fba24e9eb28.png?auto=format&dpr=1&w=256'
+    };
+
+    // 处理特殊情况
+    if (normalizedCollection.includes('bored') && normalizedCollection.includes('ape')) return collections['bayc'];
+    if (normalizedCollection.includes('mutant') && normalizedCollection.includes('ape')) return collections['mayc'];
+    if (normalizedCollection.includes('cool') && normalizedCollection.includes('cat')) return collections['coolcats'];
+    if (normalizedCollection.includes('cyber') && normalizedCollection.includes('kong')) return collections['cyberkongz'];
+    if (normalizedCollection.includes('pudgy')) return collections['pudgypenguins'];
+    if (normalizedCollection.includes('cryptopunk')) return collections['cryptopunks'];
+    
+    // 检查集合名称是否存在，不区分大小写
+    for (const [key, url] of Object.entries(collections)) {
+      if (normalizedCollection.includes(key.toLowerCase())) {
+        return url;
+      }
+    }
+
+    // 检查是否有匹配的图标，如果没有，尝试模糊匹配
+    if (collections[normalizedCollection]) {
+      return collections[normalizedCollection];
+    }
+    
+    // 尝试部分匹配
+    for (const [key, url] of Object.entries(collections)) {
+      if (normalizedCollection.includes(key) || key.includes(normalizedCollection)) {
+        return url;
+      }
+    }
+
+    // 如果找不到匹配的图标，使用默认图标
+    const defaultLogo = 'https://i.seadn.io/gae/Ju9CkWtV-1Okvf45wo8UctR-M9He2PjILP0oOvxE89AyiPPGtrR3gysu1Zgy0hjd2xKIgjJJtWIc0ybj4Vd7wv8t3pxDGHoJBzDB?auto=format&dpr=1&w=256';
+    console.log(`未找到"${collection}"的图标，使用默认图标`);
+    return defaultLogo;
   };
 
   // 准备ECharts配置
   const getOption = () => {
-    const data = getChartData();
+    if (loading) {
+      return {
+        title: {
+          text: '加载中...',
+          left: 'center',
+          textStyle: {
+            color: '#fff'
+          }
+        }
+      };
+    }
+
+    // 即使有错误状态，如果chartData有数据，优先使用实际数据
+    const data = chartData.length > 0 ? chartData : getBackupData();
+    
+    // 仅在没有实际数据且有错误时才显示错误提示
+    if (error && chartData.length === 0) {
+      return {
+        title: {
+          text: '数据加载失败，显示备用数据',
+          left: 'center',
+          textStyle: {
+            color: '#fff'
+          }
+        }
+      };
+    }
+    
     // 数据排序
     data.sort((a, b) => a.value - b.value);
-    
+
     // 准备图标配置
-    const icons = data.map(item => getIconUrl(item.icon));
-    
+    const icons = data.map(item => getIconUrl(item.icon, item.logoUrl));
+
     // 美化：创建渐变色系
     const colors = [
+      ['#f5222d', '#ff7875'], // 红色渐变
+      ['#fa541c', '#ff9c6e'], // 橙色渐变
       ['#1890ff', '#36cfff'], // 蓝色渐变
       ['#52c41a', '#a0d911'], // 绿色渐变
-      ['#faad14', '#ffec3d'], // 黄色渐变
-      ['#f5222d', '#ff7875'], // 红色渐变
       ['#722ed1', '#b37feb'], // 紫色渐变
       ['#13c2c2', '#5cdbd3'], // 青色渐变
       ['#eb2f96', '#ff85c0'], // 粉色渐变
-      ['#fa541c', '#ff9c6e'], // 橙色渐变
       ['#2f54eb', '#85a5ff'], // 深蓝渐变
-      ['#fa8c16', '#ffc53d']  // 橙黄渐变
+      ['#fa8c16', '#ffc53d'], // 橙黄渐变
+      ['#d48806', '#cf1322']  // 红色渐变
     ];
 
     return {
+      title: {
+        show: false // 不显示标题
+      },
       tooltip: {
         trigger: 'axis',
         axisPointer: {
@@ -1924,18 +2577,18 @@ const WhaleOutflowCollectionsChart: React.FC<{
             color: 'rgba(24, 144, 255, 0.1)'
           }
         },
-        formatter: function(params: any) {
+        formatter: function (params: any) {
           const dataIndex = params[0].dataIndex;
           // 确保data是已定义的
           if (!data || !data[dataIndex]) return '';
-          
+
           const value = data[dataIndex].value;
           const formattedValue = new Intl.NumberFormat('en-US', {
             style: 'currency',
             currency: 'USD',
             maximumFractionDigits: 0
           }).format(value);
-          
+
           return `<div style="display: flex; align-items: center; padding: 8px 12px;">
                    <img src="${icons[dataIndex]}" style="width: 32px; height: 32px; margin-right: 12px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);" />
                    <div>
@@ -1963,7 +2616,7 @@ const WhaleOutflowCollectionsChart: React.FC<{
       xAxis: {
         type: 'value',
         axisLabel: {
-          formatter: function(value: number) {
+          formatter: function (value: number) {
             if (value >= 1000000) {
               return '$' + (value / 1000000).toFixed(1) + 'M';
             } else if (value >= 1000) {
@@ -1996,7 +2649,7 @@ const WhaleOutflowCollectionsChart: React.FC<{
         type: 'category',
         data: data.map(item => ''),  // 空字符串，因为我们使用rich text显示图标
         axisLabel: {
-          formatter: function(value: string, index: number) {
+          formatter: function (value: string, index: number) {
             return '{icon' + index + '|}';
           },
           rich: data.reduce((acc: any, item, index) => {
@@ -2059,7 +2712,7 @@ const WhaleOutflowCollectionsChart: React.FC<{
           label: {
             show: true,
             position: 'insideRight',
-            formatter: function(params: any) {
+            formatter: function (params: any) {
               const dataIndex = params.dataIndex;
               // 确保data是已定义的
               if (!data || !data[dataIndex]) return '';
@@ -2077,13 +2730,13 @@ const WhaleOutflowCollectionsChart: React.FC<{
               shadowColor: 'rgba(0, 0, 0, 0.3)'
             }
           },
-          animationDelay: function(idx: number) {
+          animationDelay: function (idx: number) {
             return idx * 100;
           }
         }
       ],
       animationEasing: 'elasticOut',
-      animationDelayUpdate: function(idx: number) {
+      animationDelayUpdate: function (idx: number) {
         return idx * 5;
       },
       animationDuration: 1500
@@ -2091,18 +2744,94 @@ const WhaleOutflowCollectionsChart: React.FC<{
   };
 
   return (
+    <div className="whale-outflow-chart">
+      {loading && <TechLoading />}
     <ReactECharts
       option={getOption()}
       style={{ height: '400px', width: '100%' }}
       className="react-echarts"
     />
+    </div>
   );
 };
 
 // 鲸鱼收益率Top10饼状图组件
-const WhalesProfitRateChart: React.FC<{timeRange: 'day' | 'week' | 'month'}> = ({ timeRange }) => {
-  // 获取图表数据
-  const getChartData = () => {
+const WhalesProfitRateChart: React.FC<{ timeRange: 'day' | 'week' | 'month' }> = ({ timeRange }) => {
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const chartRef = useRef<any>(null);
+  
+  // 使用useEffect获取数据
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        // 确定要使用的rank_timerange值
+        const rankTimeRange = timeRange === 'day' ? 'DAY' : 
+                             timeRange === 'week' ? '7DAYS' : '30DAYS';
+        
+        // 使用dataLakeApi从ads.ads_top_roi_whales表获取数据
+        const response: any = await dataLakeApi.queryTableData('ads', 'ads_top_roi_whales', 30);
+        
+        // 检查数据是否有效
+        if (Array.isArray(response) && response.length > 0) {
+          // 筛选出特定时间范围的数据并按rank_num排序
+          const filteredData = response
+            .filter((item: any) => item.rank_timerange === rankTimeRange)
+            .sort((a: any, b: any) => a.rank_num - b.rank_num)
+            .slice(0, 10); // 只取前10名
+          
+          // 将数据转换为图表需要的格式
+          const formattedData = filteredData.map((item: any) => ({
+            name: item.wallet_address ? 
+              `${item.wallet_address.substring(0, 6)}...${item.wallet_address.substring(item.wallet_address.length - 4)}` : 
+              'Unknown',
+            value: Number(item.roi_percentage) || 0,
+            profit: Number(item.total_profit_eth) || 0
+          }));
+          
+          console.log('鲸鱼收益率数据:', formattedData.map(item => 
+            `${item.name}: +${item.value.toFixed(2)}%, 收益: ${item.profit.toFixed(2)} ETH`).join('\n'));
+            
+          setChartData(formattedData);
+          
+          // 如果已经有图表实例，直接更新数据
+          if (chartRef.current && chartRef.current.getEchartsInstance) {
+            const echartsInstance = chartRef.current.getEchartsInstance();
+            echartsInstance.setOption(getOption(formattedData));
+          }
+        } else {
+          // 如果没有数据，使用模拟数据
+          const mockData = getMockData();
+          setChartData(mockData);
+          
+          // 如果已经有图表实例，直接更新数据
+          if (chartRef.current && chartRef.current.getEchartsInstance) {
+            const echartsInstance = chartRef.current.getEchartsInstance();
+            echartsInstance.setOption(getOption(mockData));
+          }
+        }
+      } catch (error) {
+        console.error('获取鲸鱼收益率数据失败', error);
+        // 出错时使用模拟数据
+        const mockData = getMockData();
+        setChartData(mockData);
+        
+        // 如果已经有图表实例，直接更新数据
+        if (chartRef.current && chartRef.current.getEchartsInstance) {
+          const echartsInstance = chartRef.current.getEchartsInstance();
+          echartsInstance.setOption(getOption(mockData));
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchData();
+  }, [timeRange]);
+  
+  // 获取模拟数据的方法 - 保留原有的模拟数据作为备用
+  const getMockData = () => {
     // 根据时间范围返回不同的收益率数据
     if (timeRange === 'day') {
       return [
@@ -2146,11 +2875,28 @@ const WhalesProfitRateChart: React.FC<{timeRange: 'day' | 'week' | 'month'}> = (
     }
   };
 
-  const getOption = () => {
-    const data = getChartData();
-    const totalProfit = data.reduce((sum, item) => sum + item.profit, 0);
+  const getOption = (data = chartData) => {
+    // 检查数据是否有效
+    if (!data || data.length === 0) {
+      return {
+        title: {
+          text: '暂无数据',
+          left: 'center',
+          top: 'center',
+          textStyle: {
+            color: 'rgba(255, 255, 255, 0.5)',
+            fontSize: 16
+          }
+        }
+      };
+    }
     
+    const totalProfit = data.reduce((sum, item) => sum + item.profit, 0);
+
     return {
+      title: {
+        show: false // 不显示标题
+      },
       tooltip: {
         trigger: 'item',
         formatter: (params: any) => {
@@ -2160,11 +2906,11 @@ const WhalesProfitRateChart: React.FC<{timeRange: 'day' | 'week' | 'month'}> = (
                    <div style="font-size: 14px; font-weight: bold; color: #fff;">${params.name}</div>
                    <div style="display: flex; justify-content: space-between; gap: 16px;">
                      <span style="color: rgba(255, 255, 255, 0.85);">收益率:</span>
-                     <span style="color: #52c41a; font-weight: bold;">+${params.value}%</span>
+                     <span style="color: #52c41a; font-weight: bold;">+${params.value.toFixed(2)}%</span>
                    </div>
                    <div style="display: flex; justify-content: space-between; gap: 16px;">
                      <span style="color: rgba(255, 255, 255, 0.85);">收益额:</span>
-                     <span style="color: #1890ff; font-weight: bold;">$${item?.profit.toLocaleString()}</span>
+                     <span style="color: #1890ff; font-weight: bold;">${item?.profit.toFixed(2)} ETH</span>
                    </div>
                    <div style="display: flex; justify-content: space-between; gap: 16px;">
                      <span style="color: rgba(255, 255, 255, 0.85);">占比:</span>
@@ -2202,7 +2948,7 @@ const WhalesProfitRateChart: React.FC<{timeRange: 'day' | 'week' | 'month'}> = (
         itemGap: 12,
         formatter: (name: string) => {
           const item = data.find(d => d.name === name);
-          return `${name}  +${item?.value}%`;
+          return `${name}  +${item?.value.toFixed(2)}%`;
         },
         selectedMode: true,
         select: {
@@ -2239,7 +2985,7 @@ const WhalesProfitRateChart: React.FC<{timeRange: 'day' | 'week' | 'month'}> = (
               formatter: (params: any) => {
                 return [
                   `{name|${params.name}}`,
-                  `{value|+${params.value}%}`
+                  `{value|+${params.value.toFixed(2)}%}`
                 ].join('\n');
               },
               rich: {
@@ -2270,19 +3016,19 @@ const WhalesProfitRateChart: React.FC<{timeRange: 'day' | 'week' | 'month'}> = (
             value: item.value,
             itemStyle: {
               color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                { 
-                  offset: 0, 
+                {
+                  offset: 0,
                   color: [
                     '#52c41a', '#1890ff', '#722ed1', '#eb2f96', '#faad14',
                     '#13c2c2', '#f5222d', '#a0d911', '#2f54eb', '#fa541c'
-                  ][index] 
+                  ][index % 10]
                 },
-                { 
-                  offset: 1, 
+                {
+                  offset: 1,
                   color: [
                     '#389e0d', '#096dd9', '#531dab', '#c41d7f', '#d48806',
                     '#08979c', '#cf1322', '#7cb305', '#1d39c4', '#d4380d'
-                  ][index] 
+                  ][index % 10]
                 }
               ])
             }
@@ -2297,12 +3043,29 @@ const WhalesProfitRateChart: React.FC<{timeRange: 'day' | 'week' | 'month'}> = (
     };
   };
 
+  // 当数据变化时手动更新图表
+  useEffect(() => {
+    if (chartRef.current && chartRef.current.getEchartsInstance) {
+      const echartsInstance = chartRef.current.getEchartsInstance();
+      echartsInstance.setOption(getOption());
+    }
+  }, [chartData]);
+
   return (
+    <>
+      {loading ? (
+        <TechLoading />
+      ) : (
     <ReactECharts
+          ref={chartRef}
       option={getOption()}
       style={{ height: '300px', width: '100%' }}
       className="react-echarts"
+          notMerge={true}
+          lazyUpdate={false}
     />
+      )}
+    </>
   );
 };
 
@@ -2351,14 +3114,14 @@ const WalletAnalysisModal: React.FC<{
         });
         setLoading(false);
       }, 1500);
-      
+
       return () => clearTimeout(timer);
     }
   }, [visible]);
 
   const getHoldingsChartOption = () => {
     if (!walletData) return {};
-    
+
     return {
       tooltip: {
         trigger: 'item',
@@ -2430,11 +3193,11 @@ const WalletAnalysisModal: React.FC<{
       footer={null}
       width={900}
       centered
-      bodyStyle={{ 
-        padding: '20px', 
-        background: '#001529', 
-        maxHeight: '80vh', 
-        overflowY: 'auto' 
+      bodyStyle={{
+        padding: '20px',
+        background: '#001529',
+        maxHeight: '80vh',
+        overflowY: 'auto'
       }}
     >
       {loading ? (
@@ -2446,8 +3209,8 @@ const WalletAnalysisModal: React.FC<{
         <>
           <Row gutter={16} style={{ marginBottom: 24 }}>
             <Col span={8}>
-              <Card 
-                className="tech-card" 
+              <Card
+                className="tech-card"
                 bordered={false}
                 style={{ height: '100%' }}
               >
@@ -2460,8 +3223,8 @@ const WalletAnalysisModal: React.FC<{
               </Card>
             </Col>
             <Col span={8}>
-              <Card 
-                className="tech-card" 
+              <Card
+                className="tech-card"
                 bordered={false}
                 style={{ height: '100%' }}
               >
@@ -2476,8 +3239,8 @@ const WalletAnalysisModal: React.FC<{
               </Card>
             </Col>
             <Col span={8}>
-              <Card 
-                className="tech-card" 
+              <Card
+                className="tech-card"
                 bordered={false}
                 style={{ height: '100%' }}
               >
@@ -2495,14 +3258,14 @@ const WalletAnalysisModal: React.FC<{
 
           <Row gutter={16} style={{ marginBottom: 24 }}>
             <Col span={16}>
-              <Card 
+              <Card
                 title={
                   <div style={{ display: 'flex', alignItems: 'center' }}>
                     <AreaChartOutlined style={{ color: 'var(--primary)', marginRight: 8 }} />
                     <Text style={{ color: 'var(--text-primary)' }}>交易趋势分析</Text>
                   </div>
-                } 
-                className="tech-card" 
+                }
+                className="tech-card"
                 bordered={false}
               >
                 <ReactECharts
@@ -2590,14 +3353,14 @@ const WalletAnalysisModal: React.FC<{
               </Card>
             </Col>
             <Col span={8}>
-              <Card 
+              <Card
                 title={
                   <div style={{ display: 'flex', alignItems: 'center' }}>
                     <PieChartOutlined style={{ color: 'var(--primary)', marginRight: 8 }} />
                     <Text style={{ color: 'var(--text-primary)' }}>NFT持有分布</Text>
                   </div>
-                } 
-                className="tech-card" 
+                }
+                className="tech-card"
                 bordered={false}
               >
                 <ReactECharts
@@ -2609,14 +3372,14 @@ const WalletAnalysisModal: React.FC<{
             </Col>
           </Row>
 
-          <Card 
+          <Card
             title={
               <div style={{ display: 'flex', alignItems: 'center' }}>
                 <HistoryOutlined style={{ color: 'var(--primary)', marginRight: 8 }} />
                 <Text style={{ color: 'var(--text-primary)' }}>近期交易</Text>
               </div>
-            } 
-            className="tech-card" 
+            }
+            className="tech-card"
             bordered={false}
           >
             <List
@@ -2626,8 +3389,8 @@ const WalletAnalysisModal: React.FC<{
                 <List.Item>
                   <List.Item.Meta
                     avatar={
-                      <Avatar 
-                        style={{ 
+                      <Avatar
+                        style={{
                           backgroundColor: item.type === '买入' ? 'var(--success)' : 'var(--danger)',
                           boxShadow: `0 0 10px ${item.type === '买入' ? 'rgba(82, 196, 26, 0.3)' : 'rgba(245, 34, 45, 0.3)'}`
                         }}
@@ -2635,7 +3398,7 @@ const WalletAnalysisModal: React.FC<{
                       />
                     }
                     title={
-                      <Text style={{ 
+                      <Text style={{
                         color: 'var(--text-primary)',
                         fontSize: 14,
                         fontWeight: 500
@@ -2647,8 +3410,8 @@ const WalletAnalysisModal: React.FC<{
                       <Space>
                         <Text style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{item.time}</Text>
                         <Divider type="vertical" style={{ borderLeftColor: 'rgba(255, 255, 255,.08)' }} />
-                        <Text style={{ 
-                          color: item.type === '买入' ? 'var(--success)' : 'var(--danger)', 
+                        <Text style={{
+                          color: item.type === '买入' ? 'var(--success)' : 'var(--danger)',
                           fontSize: 14,
                           fontWeight: 500
                         }}>
@@ -2673,7 +3436,9 @@ const WhaleListModal: React.FC<{
   onClose: () => void;
   type: 'tracked' | 'smart' | 'dumb' | 'all';
   onSelectWhale: (whaleId: string) => void;
-}> = ({ visible, onClose, type, onSelectWhale }) => {
+  trackedWhales: string[];
+  trackedWhalesData?: any[]; // 添加可选的完整鲸鱼数据参数
+}> = ({ visible, onClose, type, onSelectWhale, trackedWhales, trackedWhalesData = [] }) => {
   const [loading, setLoading] = useState(true);
   const [whaleList, setWhaleList] = useState<any[]>([]);
 
@@ -2709,655 +3474,175 @@ const WhaleListModal: React.FC<{
     }
   };
 
+  // 渲染影响力星级
+  const renderStars = (influence: number) => {
+    const starCount = Math.round(influence / 20);
+    return (
+      <div>
+        {[...Array(5)].map((_, i) => (
+          <StarFilled 
+            key={i}
+            style={{ 
+              color: i < starCount ? 'var(--warning)' : 'var(--text-quaternary)',
+              marginRight: 2
+            }} 
+          />
+        ))}
+      </div>
+    );
+  };
+
   useEffect(() => {
     if (visible) {
-      // 模拟API请求加载鲸鱼数据
-      const timer = setTimeout(() => {
-        // 模拟不同类型的鲸鱼数据
+      // 加载状态
+      setLoading(true);
+      
+      // 定义一个函数来获取真实数据
+      const fetchRealWhaleData = async () => {
+        try {
+          // 如果是重点追踪鲸鱼类型，且有传入的trackedWhalesData数据，优先使用
+          if (type === 'tracked' && trackedWhalesData && trackedWhalesData.length > 0) {
+            console.log('使用从Dashboard传入的完整鲸鱼数据:', trackedWhalesData.length, '条');
+            
+            // 转换数据格式（如果需要）
+            const formattedData = trackedWhalesData.map((item, index) => ({
+              key: index.toString(),
+              ...item
+            }));
+            
+            setWhaleList(formattedData);
+            setLoading(false);
+            return;
+          }
+          
+          // 如果没有传入数据或不是重点追踪类型，从API获取数据
+          // 从数据湖API获取ads_whale_tracking_list表数据
+          const response: any = await dataLakeApi.queryTableData('ads', 'ads_whale_tracking_list', 1000);
+          
+          if (Array.isArray(response) && response.length > 0) {
+            console.log('获取到的鲸鱼追踪列表数据:', response.length, '条');
+            
+            // 根据传入的type类型筛选数据
+            let filteredData = response;
+            
+            if (type === 'smart') {
+              filteredData = response.filter(item => item.wallet_type === 'SMART');
+            } else if (type === 'dumb') {
+              filteredData = response.filter(item => item.wallet_type === 'DUMB');
+            } else if (type === 'tracked') {
+              // 使用用户手动追踪的鲸鱼列表，而不是数据库中的TRACKING类型
+              if (trackedWhales && trackedWhales.length > 0) {
+                // 筛选出地址在trackedWhales中的鲸鱼
+                filteredData = response.filter(item => 
+                  trackedWhales.includes(item.wallet_address)
+                );
+                console.log(`显示用户手动追踪的 ${filteredData.length} 只鲸鱼，而不是数据库中的TRACKING类型`);
+              } else {
+                // 如果用户没有手动追踪任何鲸鱼，则返回空数组
+                filteredData = [];
+                console.log('用户尚未追踪任何鲸鱼，显示空列表');
+              }
+            }
+            
+            // 转换为前端需要的格式
+            const transformedData = filteredData.map((item, index) => ({
+              key: index.toString(),
+              whaleId: `WHALE-${item.tracking_id || item.wallet_address.substring(0, 8)}`,
+              whaleAddress: item.wallet_address,
+              trackingTime: item.first_track_date ? new Date(item.first_track_date).toISOString().split('T')[0] : '',
+              influence: item.influence_score || 0,
+              trackingProfit: Number(item.total_profit_usd) || 0,
+              trackingProfitRate: Number(item.roi_percentage) || 0,
+              // 保留原始数据以备需要
+              rawData: item
+            }));
+            
+            // 更新状态
+            setWhaleList(transformedData);
+          } else {
+            console.warn('没有获取到鲸鱼追踪数据或数据格式不正确');
+            // 获取失败时使用模拟数据
+            useMockData();
+          }
+        } catch (error) {
+          console.error('获取鲸鱼追踪数据失败:', error);
+          // 获取失败时使用模拟数据
+          useMockData();
+        } finally {
+          setLoading(false);
+        }
+      };
+      
+      // 模拟数据生成函数（作为备份）
+      const useMockData = () => {
+        console.log('使用模拟鲸鱼数据');
+        // 这里保留原有的模拟数据生成逻辑
         let data: any[] = [];
-        
+
         if (type === 'tracked') {
+          // 如果是重点追踪鲸鱼列表，根据是否有用户追踪的鲸鱼来返回数据
+          if (trackedWhales && trackedWhales.length > 0) {
+            // 如果有用户追踪的鲸鱼，返回模拟数据
           data = [
             {
               key: '1',
               whaleId: 'WHALE-0x1234',
-              mainNft: 'CryptoPunks',
+                whaleAddress: '0x1234...5678',
+                trackingTime: '2023-04-15',
               influence: 89,
-              totalHolding: 3250000,
-              totalProfit: 420000,
-              profitPercent: 14.8,
-              totalNetProfit: 280000,
-              netProfitPercent: 9.8,
-              addressCount: 3
-            },
-            {
-              key: '2',
-              whaleId: 'WHALE-0x8765',
-              mainNft: 'Azuki',
-              influence: 76,
-              totalHolding: 1850000,
-              totalProfit: 250000,
-              profitPercent: 15.6,
-              totalNetProfit: 165000,
-              netProfitPercent: 10.2,
-              addressCount: 2
-            },
-            {
-              key: '3',
-              whaleId: 'WHALE-0x5678',
-              mainNft: 'BAYC',
-              influence: 95,
-              totalHolding: 4120000,
-              totalProfit: 830000,
-              profitPercent: 25.2,
-              totalNetProfit: 550000,
-              netProfitPercent: 16.5,
-              addressCount: 4
-            },
-            {
-              key: '4',
-              whaleId: 'WHALE-0xabcd',
-              mainNft: 'Doodles',
-              influence: 82,
-              totalHolding: 1450000,
-              totalProfit: 180000,
-              profitPercent: 14.2,
-              totalNetProfit: 120000,
-              netProfitPercent: 9.2,
-              addressCount: 2
-            },
-            {
-              key: '5',
-              whaleId: 'WHALE-0x9876',
-              mainNft: 'CloneX',
-              influence: 71,
-              totalHolding: 980000,
-              totalProfit: -120000,
-              profitPercent: -10.9,
-              totalNetProfit: -180000,
-              netProfitPercent: -15.5,
-              addressCount: 2
-            }
-          ];
+                trackingProfit: 420000,
+                trackingProfitRate: 14.8
+              },
+              // ...其他模拟数据
+            ];
+          } else {
+            // 如果没有用户追踪的鲸鱼，返回空数组
+            data = [];
+            console.log('用户未追踪任何鲸鱼，返回空模拟数据');
+          }
         } else if (type === 'smart') {
           data = [
             {
               key: '1',
               whaleId: 'WHALE-0x2469',
-              mainNft: 'BAYC',
+              whaleAddress: '0x2469...7890',
+              trackingTime: '2023-03-20',
               influence: 98,
-              totalHolding: 3850000,
-              totalProfit: 1250000,
-              profitPercent: 48.1,
-              totalNetProfit: 850000,
-              netProfitPercent: 32.7,
-              addressCount: 3
+              trackingProfit: 1250000,
+              trackingProfitRate: 48.1
             },
-            {
-              key: '2',
-              whaleId: 'WHALE-0x7842',
-              mainNft: 'CryptoPunks',
-              influence: 94,
-              totalHolding: 5120000,
-              totalProfit: 1840000,
-              profitPercent: 56.2,
-              totalNetProfit: 1220000,
-              netProfitPercent: 37.3,
-              addressCount: 4
-            },
-            {
-              key: '3',
-              whaleId: 'WHALE-0x5678',
-              mainNft: 'BAYC',
-              influence: 91,
-              totalHolding: 4120000,
-              totalProfit: 830000,
-              profitPercent: 25.2,
-              totalNetProfit: 550000,
-              netProfitPercent: 16.5,
-              addressCount: 4
-            },
-            {
-              key: '4',
-              whaleId: 'WHALE-0x3694',
-              mainNft: 'Art Blocks',
-              influence: 88,
-              totalHolding: 2850000,
-              totalProfit: 780000,
-              profitPercent: 37.7,
-              totalNetProfit: 520000,
-              netProfitPercent: 25.2,
-              addressCount: 2
-            },
-            {
-              key: '5',
-              whaleId: 'WHALE-0x9127',
-              mainNft: 'Moonbirds',
-              influence: 85,
-              totalHolding: 1250000,
-              totalProfit: 430000,
-              profitPercent: 52.5,
-              totalNetProfit: 290000,
-              netProfitPercent: 35.4,
-              addressCount: 2
-            }
+            // ...其他模拟数据
           ];
         } else if (type === 'dumb') {
           data = [
             {
               key: '1',
               whaleId: 'WHALE-0x3254',
-              mainNft: 'Doodles',
+              whaleAddress: '0x3254...4321',
+              trackingTime: '2023-02-10',
               influence: 45,
-              totalHolding: 950000,
-              totalProfit: -380000,
-              profitPercent: -28.6,
-              totalNetProfit: -450000,
-              netProfitPercent: -33.8,
-              addressCount: 2
+              trackingProfit: -380000,
+              trackingProfitRate: -28.6
             },
-            {
-              key: '2',
-              whaleId: 'WHALE-0x9876',
-              mainNft: 'CloneX',
-              influence: 38,
-              totalHolding: 980000,
-              totalProfit: -120000,
-              profitPercent: -10.9,
-              totalNetProfit: -180000,
-              netProfitPercent: -15.5,
-              addressCount: 2
-            },
-            {
-              key: '3',
-              whaleId: 'WHALE-0x5431',
-              mainNft: 'Pudgy Penguins',
-              influence: 52,
-              totalHolding: 520000,
-              totalProfit: -210000,
-              profitPercent: -28.8,
-              totalNetProfit: -280000,
-              netProfitPercent: -35.0,
-              addressCount: 1
-            },
-            {
-              key: '4',
-              whaleId: 'WHALE-0x7890',
-              mainNft: 'Moonbirds',
-              influence: 42,
-              totalHolding: 680000,
-              totalProfit: -150000,
-              profitPercent: -18.1,
-              totalNetProfit: -210000,
-              netProfitPercent: -23.6,
-              addressCount: 2
-            }
+            // ...其他模拟数据
           ];
-        } else if (type === 'all') {
-          // 鲸鱼名单综合数据（35个）
+        } else {
+          // 全部类型的模拟数据
           data = [
-            // 智能鲸鱼数据（8个）
-            {
-              key: '1',
-              whaleId: 'WHALE-0x2469',
-              mainNft: 'BAYC',
-              influence: 98,
-              totalHolding: 3850000,
-              totalProfit: 1250000,
-              profitPercent: 48.1,
-              totalNetProfit: 850000,
-              netProfitPercent: 32.7,
-              addressCount: 3
-            },
-            {
-              key: '2',
-              whaleId: 'WHALE-0x7842',
-              mainNft: 'CryptoPunks',
-              influence: 94,
-              totalHolding: 5120000,
-              totalProfit: 1840000,
-              profitPercent: 56.2,
-              totalNetProfit: 1220000,
-              netProfitPercent: 37.3,
-              addressCount: 4
-            },
-            {
-              key: '3',
-              whaleId: 'WHALE-0x5678',
-              mainNft: 'BAYC',
-              influence: 91,
-              totalHolding: 4120000,
-              totalProfit: 830000,
-              profitPercent: 25.2,
-              totalNetProfit: 550000,
-              netProfitPercent: 16.5,
-              addressCount: 4
-            },
-            {
-              key: '4',
-              whaleId: 'WHALE-0x3694',
-              mainNft: 'Art Blocks',
-              influence: 88,
-              totalHolding: 2850000,
-              totalProfit: 780000,
-              profitPercent: 37.7,
-              totalNetProfit: 520000,
-              netProfitPercent: 25.2,
-              addressCount: 2
-            },
-            {
-              key: '5',
-              whaleId: 'WHALE-0x9127',
-              mainNft: 'Moonbirds',
-              influence: 85,
-              totalHolding: 1250000,
-              totalProfit: 430000,
-              profitPercent: 52.5,
-              totalNetProfit: 290000,
-              netProfitPercent: 35.4,
-              addressCount: 2
-            },
-            {
-              key: '6',
-              whaleId: 'WHALE-0x6245',
-              mainNft: 'Pudgy Penguins',
-              influence: 82,
-              totalHolding: 1720000,
-              totalProfit: 620000,
-              profitPercent: 56.4,
-              totalNetProfit: 420000,
-              netProfitPercent: 38.2,
-              addressCount: 2
-            },
-            {
-              key: '7',
-              whaleId: 'WHALE-0x8132',
-              mainNft: 'Meebits',
-              influence: 80,
-              totalHolding: 2230000,
-              totalProfit: 910000,
-              profitPercent: 68.9,
-              totalNetProfit: 620000,
-              netProfitPercent: 46.9,
-              addressCount: 3
-            },
-            {
-              key: '8',
-              whaleId: 'WHALE-0x4519',
-              mainNft: 'CloneX',
-              influence: 78,
-              totalHolding: 1930000,
-              totalProfit: 740000,
-              profitPercent: 62.2,
-              totalNetProfit: 495000,
-              netProfitPercent: 41.5,
-              addressCount: 2
-            },
-            // 追踪鲸鱼数据（上面已有3个，补充2个）
-            {
-              key: '9',
-              whaleId: 'WHALE-0x1234',
-              mainNft: 'CryptoPunks',
-              influence: 89,
-              totalHolding: 3250000,
-              totalProfit: 420000,
-              profitPercent: 14.8,
-              totalNetProfit: 280000,
-              netProfitPercent: 9.8,
-              addressCount: 3
-            },
-            {
-              key: '10',
-              whaleId: 'WHALE-0xabcd',
-              mainNft: 'Doodles',
-              influence: 82,
-              totalHolding: 1450000,
-              totalProfit: 180000,
-              profitPercent: 14.2,
-              totalNetProfit: 120000,
-              netProfitPercent: 9.2,
-              addressCount: 2
-            },
-            // 愚蠢鲸鱼数据（4个）
-            {
-              key: '11',
-              whaleId: 'WHALE-0x3254',
-              mainNft: 'Doodles',
-              influence: 45,
-              totalHolding: 950000,
-              totalProfit: -380000,
-              profitPercent: -28.6,
-              totalNetProfit: -450000,
-              netProfitPercent: -33.8,
-              addressCount: 2
-            },
-            {
-              key: '12',
-              whaleId: 'WHALE-0x9876',
-              mainNft: 'CloneX',
-              influence: 38,
-              totalHolding: 980000,
-              totalProfit: -120000,
-              profitPercent: -10.9,
-              totalNetProfit: -180000,
-              netProfitPercent: -15.5,
-              addressCount: 2
-            },
-            {
-              key: '13',
-              whaleId: 'WHALE-0x5431',
-              mainNft: 'Pudgy Penguins',
-              influence: 52,
-              totalHolding: 520000,
-              totalProfit: -210000,
-              profitPercent: -28.8,
-              totalNetProfit: -280000,
-              netProfitPercent: -35.0,
-              addressCount: 1
-            },
-            {
-              key: '14',
-              whaleId: 'WHALE-0x7890',
-              mainNft: 'Moonbirds',
-              influence: 42,
-              totalHolding: 680000,
-              totalProfit: -150000,
-              profitPercent: -18.1,
-              totalNetProfit: -210000,
-              netProfitPercent: -23.6,
-              addressCount: 2
-            },
-            // 新增鲸鱼数据（21个）
-            {
-              key: '15',
-              whaleId: 'WHALE-0xbb32',
-              mainNft: 'MAYC',
-              influence: 75,
-              totalHolding: 1350000,
-              totalProfit: 320000,
-              profitPercent: 31.1,
-              totalNetProfit: 245000,
-              netProfitPercent: 23.8,
-              addressCount: 2
-            },
-            {
-              key: '16',
-              whaleId: 'WHALE-0xcc67',
-              mainNft: 'Otherdeed',
-              influence: 72,
-              totalHolding: 980000,
-              totalProfit: 210000,
-              profitPercent: 27.3,
-              totalNetProfit: 165000,
-              netProfitPercent: 21.4,
-              addressCount: 2
-            },
-            {
-              key: '17',
-              whaleId: 'WHALE-0xdd78',
-              mainNft: 'DeGods',
-              influence: 68,
-              totalHolding: 875000,
-              totalProfit: 195000,
-              profitPercent: 28.6,
-              totalNetProfit: 145000,
-              netProfitPercent: 21.2,
-              addressCount: 1
-            },
-            {
-              key: '18',
-              whaleId: 'WHALE-0xee59',
-              mainNft: 'Milady',
-              influence: 76,
-              totalHolding: 920000,
-              totalProfit: 185000,
-              profitPercent: 25.2,
-              totalNetProfit: 140000,
-              netProfitPercent: 19.1,
-              addressCount: 3
-            },
-            {
-              key: '19',
-              whaleId: 'WHALE-0xff12',
-              mainNft: 'Azuki',
-              influence: 64,
-              totalHolding: 1250000,
-              totalProfit: 280000,
-              profitPercent: 28.9,
-              totalNetProfit: 195000,
-              netProfitPercent: 20.1,
-              addressCount: 2
-            },
-            {
-              key: '20',
-              whaleId: 'WHALE-0x1a45',
-              mainNft: 'Fidenza',
-              influence: 77,
-              totalHolding: 1750000,
-              totalProfit: 510000,
-              profitPercent: 41.1,
-              totalNetProfit: 375000,
-              netProfitPercent: 30.2,
-              addressCount: 2
-            },
-            {
-              key: '21',
-              whaleId: 'WHALE-0x2b23',
-              mainNft: 'Chromie Squiggle',
-              influence: 66,
-              totalHolding: 950000,
-              totalProfit: 215000,
-              profitPercent: 29.2,
-              totalNetProfit: 165000,
-              netProfitPercent: 22.4,
-              addressCount: 1
-            },
-            {
-              key: '22',
-              whaleId: 'WHALE-0x3c56',
-              mainNft: 'Autoglyphs',
-              influence: 83,
-              totalHolding: 2250000,
-              totalProfit: 750000,
-              profitPercent: 50.0,
-              totalNetProfit: 560000,
-              netProfitPercent: 37.3,
-              addressCount: 2
-            },
-            {
-              key: '23',
-              whaleId: 'WHALE-0x4d89',
-              mainNft: 'CoolCats',
-              influence: 62,
-              totalHolding: 720000,
-              totalProfit: 150000,
-              profitPercent: 26.3,
-              totalNetProfit: 105000,
-              netProfitPercent: 18.4,
-              addressCount: 1
-            },
-            {
-              key: '24',
-              whaleId: 'WHALE-0x5e91',
-              mainNft: 'Nouns',
-              influence: 79,
-              totalHolding: 2650000,
-              totalProfit: 920000,
-              profitPercent: 53.2,
-              totalNetProfit: 680000,
-              netProfitPercent: 39.3,
-              addressCount: 3
-            },
-            {
-              key: '25',
-              whaleId: 'WHALE-0x6f34',
-              mainNft: 'Cryptoadz',
-              influence: 58,
-              totalHolding: 840000,
-              totalProfit: -95000,
-              profitPercent: -10.2,
-              totalNetProfit: -150000,
-              netProfitPercent: -16.1,
-              addressCount: 2
-            },
-            {
-              key: '26',
-              whaleId: 'WHALE-0x7g65',
-              mainNft: 'Goblintown',
-              influence: 54,
-              totalHolding: 420000,
-              totalProfit: -65000,
-              profitPercent: -13.4,
-              totalNetProfit: -110000,
-              netProfitPercent: -22.7,
-              addressCount: 1
-            },
-            {
-              key: '27',
-              whaleId: 'WHALE-0x8h12',
-              mainNft: 'Loot',
-              influence: 49,
-              totalHolding: 380000,
-              totalProfit: -125000,
-              profitPercent: -24.8,
-              totalNetProfit: -190000,
-              netProfitPercent: -37.6,
-              addressCount: 1
-            },
-            {
-              key: '28',
-              whaleId: 'WHALE-0x9i54',
-              mainNft: 'Dooplicator',
-              influence: 61,
-              totalHolding: 590000,
-              totalProfit: 85000,
-              profitPercent: 16.8,
-              totalNetProfit: 55000,
-              netProfitPercent: 10.9,
-              addressCount: 1
-            },
-            {
-              key: '29',
-              whaleId: 'WHALE-0xaj78',
-              mainNft: 'BAKC',
-              influence: 72,
-              totalHolding: 1120000,
-              totalProfit: 280000,
-              profitPercent: 33.3,
-              totalNetProfit: 210000,
-              netProfitPercent: 25.0,
-              addressCount: 2
-            },
-            {
-              key: '30',
-              whaleId: 'WHALE-0xbk90',
-              mainNft: 'Sandbox Land',
-              influence: 67,
-              totalHolding: 1580000,
-              totalProfit: 430000,
-              profitPercent: 37.4,
-              totalNetProfit: 320000,
-              netProfitPercent: 27.8,
-              addressCount: 3
-            },
-            {
-              key: '31',
-              whaleId: 'WHALE-0xcl23',
-              mainNft: 'Decentraland',
-              influence: 59,
-              totalHolding: 920000,
-              totalProfit: 180000,
-              profitPercent: 24.3,
-              totalNetProfit: 130000,
-              netProfitPercent: 17.6,
-              addressCount: 2
-            },
-            {
-              key: '32',
-              whaleId: 'WHALE-0xdm45',
-              mainNft: 'CloneX',
-              influence: 55,
-              totalHolding: 650000,
-              totalProfit: -80000,
-              profitPercent: -11.0,
-              totalNetProfit: -120000,
-              netProfitPercent: -16.5,
-              addressCount: 1
-            },
-            {
-              key: '33',
-              whaleId: 'WHALE-0xen67',
-              mainNft: 'Moonbirds',
-              influence: 69,
-              totalHolding: 980000,
-              totalProfit: 250000,
-              profitPercent: 34.2,
-              totalNetProfit: 190000,
-              netProfitPercent: 26.0,
-              addressCount: 2
-            },
-            {
-              key: '34',
-              whaleId: 'WHALE-0xfo89',
-              mainNft: 'Crypto Punks',
-              influence: 71,
-              totalHolding: 1850000,
-              totalProfit: 520000,
-              profitPercent: 39.1,
-              totalNetProfit: 380000,
-              netProfitPercent: 28.6,
-              addressCount: 2
-            },
-            {
-              key: '35',
-              whaleId: 'WHALE-0xgp12',
-              mainNft: 'BAYC',
-              influence: 74,
-              totalHolding: 2120000,
-              totalProfit: 680000,
-              profitPercent: 47.2,
-              totalNetProfit: 510000,
-              netProfitPercent: 35.4,
-              addressCount: 3
-            }
+            // ...模拟数据
           ];
         }
-        
+
         setWhaleList(data);
         setLoading(false);
-      }, 1000);
-      
-      return () => clearTimeout(timer);
+      };
+
+      // 尝试获取真实数据
+      fetchRealWhaleData();
     }
-  }, [visible, type]);
+  }, [visible, type, trackedWhales, trackedWhalesData]);
 
-  // 在WhaleListModal组件中添加渲染星级的函数
-  const renderStars = (influence: number) => {
-    // 将影响力分数（0-100）转换为星级（1-5）
-    const starCount = Math.max(1, Math.min(5, Math.ceil(influence / 20)));
-    return (
-      <div style={{ display: 'flex', alignItems: 'center' }}>
-        {Array(5).fill(0).map((_, index) => (
-          <StarFilled 
-            key={index}
-            style={{ 
-              color: index < starCount ? '#faad14' : 'rgba(255, 255, 255, 0.15)',
-              fontSize: 14,
-              marginRight: 2
-            }} 
-          />
-        ))}
-        <Text style={{ 
-          marginLeft: 8, 
-          fontSize: 12, 
-          color: 'rgba(255, 255, 255, 0.45)' 
-        }}>
-          ({influence}分)
-        </Text>
-      </div>
-    );
-  };
-
+  // 定义表格列
   const columns = [
     {
       title: <Text style={{ color: 'var(--text-primary)' }}>鲸鱼ID</Text>,
@@ -3365,10 +3650,10 @@ const WhaleListModal: React.FC<{
       key: 'whaleId',
       width: 180,
       render: (id: string) => (
-        <Text 
-          style={{ 
-            color: 'var(--primary)', 
-            cursor: 'pointer', 
+        <Text
+          style={{
+            color: 'var(--primary)',
+            cursor: 'pointer',
             textShadow: '0 0 8px rgba(24, 144, 255, 0.3)',
             textDecoration: 'underline'
           }}
@@ -3382,111 +3667,101 @@ const WhaleListModal: React.FC<{
       title: <Text style={{ color: 'var(--text-primary)' }}>影响力</Text>,
       dataIndex: 'influence',
       key: 'influence',
-      width: 200,
+      width: 120,
       render: (influence: number) => renderStars(influence),
     },
     {
-      title: <Text style={{ color: 'var(--text-primary)' }}>重仓NFT</Text>,
-      dataIndex: 'mainNft',
-      key: 'mainNft',
-      width: 150,
-      render: (nft: string) => (
-        <Badge 
-          color="var(--primary)" 
-          text={<Text style={{ color: 'var(--text-primary)' }}>{nft}</Text>} 
-        />
+      title: <Text style={{ color: 'var(--text-primary)' }}>鲸鱼地址</Text>,
+      dataIndex: 'whaleAddress',
+      key: 'whaleAddress',
+      width: 180,
+      render: (address: string) => (
+        <Text style={{ color: 'var(--text-secondary)' }}>
+          {address ? `${address.substring(0, 6)}...${address.substring(address.length - 4)}` : '-'}
+        </Text>
       ),
     },
     {
-      title: <Text style={{ color: 'var(--text-primary)' }}>总持仓金额</Text>,
-      dataIndex: 'totalHolding',
-      key: 'totalHolding',
-      width: 150,
-      render: (value: number) => (
-        <Statistic
-          value={value}
-          precision={0}
-          valueStyle={{ 
-            color: 'var(--warning)', 
-            fontSize: 16, 
-            textShadow: 'var(--text-shadow-warning)'
-          }}
-          suffix="$"
-        />
-      ),
-    },
-    {
-      title: <Text style={{ color: 'var(--text-primary)' }}>总持有收益</Text>,
-      dataIndex: 'totalProfit',
-      key: 'totalProfit',
-      width: 150,
-      render: (value: number, record: any) => (
-        <div>
-          <Statistic
-            value={value}
-            precision={0}
-            prefix={value >= 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
-            valueStyle={{ 
-              color: value >= 0 ? 'var(--success)' : 'var(--danger)', 
-              fontSize: 16, 
-              textShadow: value >= 0 ? 'var(--text-shadow-success)' : 'var(--text-shadow-danger)'
-            }}
-            suffix="$"
-          />
-          <Text style={{ 
-            color: value >= 0 ? 'var(--success)' : 'var(--danger)',
-            fontSize: 12,
-            marginLeft: 8
-          }}>
-            {value >= 0 ? '+' : ''}{record.profitPercent}%
+      title: <Text style={{ color: 'var(--text-primary)' }}>追踪时间</Text>,
+      dataIndex: 'trackingTime',
+      key: 'trackingTime',
+      width: 120,
+      render: (time: string, record: any) => {
+        // 从原始数据中获取追踪时间
+        const trackingDate = record.rawData?.first_track_date ? 
+          new Date(record.rawData.first_track_date) : null;
+          
+        // 如果有追踪时间，格式化为YYYY-MM-DD
+        const formattedDate = trackingDate ? 
+          trackingDate.toISOString().split('T')[0] : 
+          (time || '-');
+          
+        return (
+          <Text style={{ color: 'var(--text-secondary)' }}>
+            {formattedDate}
           </Text>
-        </div>
-      ),
+        );
+      },
     },
     {
-      title: <Text style={{ color: 'var(--text-primary)' }}>总净收益</Text>,
-      dataIndex: 'totalNetProfit',
-      key: 'totalNetProfit',
+      title: <Text style={{ color: 'var(--text-primary)' }}>追踪以来收益</Text>,
+      dataIndex: 'trackingProfit',
+      key: 'trackingProfit',
       width: 150,
-      render: (value: number, record: any) => (
-        <div>
-          <Statistic
-            value={value}
-            precision={0}
-            prefix={value >= 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
-            valueStyle={{ 
-              color: value >= 0 ? 'var(--success)' : 'var(--danger)', 
-              fontSize: 16, 
-              textShadow: value >= 0 ? 'var(--text-shadow-success)' : 'var(--text-shadow-danger)'
+      render: (profit: number, record: any) => {
+        // 从原始数据中获取收益额（优先使用total_profit_usd，备选用total_profit_eth并乘以假设的ETH价格2000）
+        let actualProfit = profit;
+        if (record.rawData) {
+          if (record.rawData.total_profit_usd !== undefined) {
+            actualProfit = Number(record.rawData.total_profit_usd);
+          } else if (record.rawData.total_profit_eth !== undefined) {
+            actualProfit = Number(record.rawData.total_profit_eth) * 2000; // 假设ETH价格为2000美元
+          }
+        }
+        
+        return (
+          <Text
+            style={{
+              color: actualProfit >= 0 ? 'var(--success)' : 'var(--danger)',
+              fontWeight: 'bold'
             }}
-            suffix="$"
-          />
-          <Text style={{ 
-            color: value >= 0 ? 'var(--success)' : 'var(--danger)',
-            fontSize: 12,
-            marginLeft: 8
-          }}>
-            {value >= 0 ? '+' : ''}{record.netProfitPercent}%
+          >
+            ${actualProfit ? actualProfit.toLocaleString() : '0'}
           </Text>
-        </div>
-      ),
+        );
+      },
     },
     {
-      title: <Text style={{ color: 'var(--text-primary)' }}>关联钱包数</Text>,
-      dataIndex: 'addressCount',
-      key: 'addressCount',
-      width: 100,
-      render: (count: number) => (
-        <Badge 
-          count={count} 
-          style={{ 
-            backgroundColor: 'var(--primary)',
-            fontWeight: 'bold',
-            boxShadow: '0 0 8px var(--primary)'
-          }} 
-        />
-      ),
-    },
+      title: <Text style={{ color: 'var(--text-primary)' }}>追踪以来收益率</Text>,
+      dataIndex: 'trackingProfitRate',
+      key: 'trackingProfitRate',
+      width: 150,
+      render: (rate: number, record: any) => {
+        // 从原始数据中获取收益率
+        let actualRate = rate;
+        if (record.rawData && record.rawData.roi_percentage !== undefined) {
+          actualRate = Number(record.rawData.roi_percentage);
+        }
+        
+        return (
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            {actualRate >= 0 ? (
+              <ArrowUpOutlined style={{ color: 'var(--success)', marginRight: 8 }} />
+            ) : (
+              <ArrowDownOutlined style={{ color: 'var(--danger)', marginRight: 8 }} />
+            )}
+            <Text
+              style={{
+                color: actualRate >= 0 ? 'var(--success)' : 'var(--danger)',
+                fontWeight: 'bold'
+              }}
+            >
+              {actualRate ? Math.abs(actualRate).toFixed(2) : '0.00'}%
+            </Text>
+          </div>
+        );
+      },
+    }
   ];
 
   return (
@@ -3512,9 +3787,9 @@ const WhaleListModal: React.FC<{
           <div style={{ marginTop: 16, color: 'rgba(255, 255, 255, 0.65)' }}>加载鲸鱼数据中...</div>
         </div>
       ) : (
-        <Table 
-          columns={columns} 
-          dataSource={whaleList} 
+        <Table
+          columns={columns}
+          dataSource={whaleList}
           pagination={{
             pageSize: 5,
             showSizeChanger: true,
@@ -3522,7 +3797,7 @@ const WhaleListModal: React.FC<{
             showTotal: (total) => `共 ${total} 只鲸鱼`,
             size: 'small',
             showQuickJumper: true,
-          }} 
+          }}
           rowClassName="tech-table-row"
           style={{ background: 'transparent' }}
           scroll={{ x: 1080 }}
@@ -3533,41 +3808,220 @@ const WhaleListModal: React.FC<{
 };
 
 const Dashboard: React.FC = () => {
-  // 添加数据加载状态
-  const [loading, setLoading] = useState(true);
-  const [statsData, setStatsData] = useState<any>(null);
-  const [whaleData, setWhaleData] = useState<any[]>([]);
-
-  // 添加钱包分析模态框状态
-  const [modalVisible, setModalVisible] = useState(false);
-  const [selectedWallet, setSelectedWallet] = useState<{address: string, label: string} | null>(null);
-
-  // 添加鲸鱼列表模态框状态
-  const [whaleListModalVisible, setWhaleListModalVisible] = useState(false);
-  const [whaleListType, setWhaleListType] = useState<'tracked' | 'smart' | 'dumb' | 'all'>('tracked');
+  // 基础状态管理
+  const [activeTab, setActiveTab] = useState('home');
+  const [selectedTimeRange, setSelectedTimeRange] = useState<'day' | 'week' | 'month'>('day');
+  const [selectedWhaleType, setSelectedWhaleType] = useState<'all' | 'smart' | 'dumb'>('all');
   
-  // 添加鲸鱼钱包模态框状态
+  // 数据加载状态
+  const [loading, setLoading] = useState(true);
+  const [statsData, setStatsData] = useState({
+    activeWhales: 0,
+    smartWhales: 0,
+    dumbWhales: 0,
+    successRate: 0,
+    totalWhales: 0 // 添加所有鲸鱼字段
+  });
+  
+  // 追踪鲸鱼状态
+  const [trackedWhales, setTrackedWhales] = useState<string[]>([]);
+  
+  // 存储鲸鱼完整数据
+  const [trackedWhalesData, setTrackedWhalesData] = useState<any[]>([]);
+  
+  // 钱包分析模态框状态
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedWallet, setSelectedWallet] = useState<{ address: string, label: string }>({ address: '', label: '' });
+
+  // 鲸鱼列表模态框状态
+  const [whaleListModalVisible, setWhaleListModalVisible] = useState(false);
+  const [whaleListType, setWhaleListType] = useState<'tracked' | 'smart' | 'dumb' | 'all'>('all');
+
+  // 鲸鱼钱包模态框状态
   const [whaleAddressModalVisible, setWhaleAddressModalVisible] = useState(false);
   const [selectedWhaleId, setSelectedWhaleId] = useState<string | null>(null);
 
-  // 添加前十鲸鱼交易额图表时间范围状态
+  // 鲸鱼交易额图表状态
   const [whalesVolumeTimeRange, setWhalesVolumeTimeRange] = useState<'day' | 'week' | 'month'>('week');
 
-  // 添加鲸鱼流入收藏集图表时间范围状态
-  const [inflowTimeRange, setInflowTimeRange] = useState<'day' | 'week' | 'month'>('week');
+  // 鲸鱼收益率图表状态
+  const [whalesProfitTimeRange, setWhalesProfitTimeRange] = useState<'day' | 'week' | 'month'>('week');
 
-  // 添加鲸鱼流入收藏集图表鲸鱼类型状态
+  // 鲸鱼流入/流出状态
+  const [isInflow, setIsInflow] = useState(true);
+  const [inflowTimeRange, setInflowTimeRange] = useState<'day' | 'week' | 'month'>('week');
   const [inflowWhaleType, setInflowWhaleType] = useState<'all' | 'smart' | 'dumb'>('all');
 
-  // 添加鲸鱼流入/流出状态
-  const [isInflow, setIsInflow] = useState(true);
+  // 监听鲸鱼追踪事件，更新重点追踪鲸鱼计数
+  useEffect(() => {
+    const handleWhaleTracked = (event: any) => {
+      const { action, address, whaleData } = event.detail;
+      
+      if (action === 'add') {
+        // 更新重点追踪鲸鱼计数
+        setStatsData((prev: any) => ({
+          ...prev,
+          activeWhales: prev.activeWhales + 1
+        }));
+        
+        // 如果有完整的鲸鱼数据，将其添加到追踪列表中
+        if (whaleData) {
+          console.log(`添加完整的鲸鱼数据到重点追踪列表:`, whaleData);
+          
+          // 添加到trackedWhales数组（地址）
+          setTrackedWhales(prev => {
+            if (prev.includes(address)) {
+              return prev;
+            }
+            return [...prev, address];
+          });
+          
+          // 添加完整的鲸鱼数据到trackedWhalesData状态
+          setTrackedWhalesData(prev => {
+            // 检查是否已存在相同地址的数据
+            const existingIndex = prev.findIndex(whale => whale.whaleAddress === address);
+            if (existingIndex >= 0) {
+              // 如果已存在，更新数据
+              const updatedData = [...prev];
+              updatedData[existingIndex] = whaleData;
+              return updatedData;
+            } else {
+              // 如果不存在，添加新数据
+              return [...prev, whaleData];
+            }
+          });
+        } else {
+          console.log(`仅添加鲸鱼地址到重点追踪列表:`, address);
+          
+          // 仅添加地址
+          setTrackedWhales(prev => {
+            if (prev.includes(address)) {
+              return prev;
+            }
+            return [...prev, address];
+          });
+        }
+        
+        console.log(`重点追踪鲸鱼增加，当前数量: ${statsData.activeWhales + 1}`);
+      } else if (action === 'remove') {
+        // 更新重点追踪鲸鱼计数
+        setStatsData((prev: any) => ({
+          ...prev,
+          activeWhales: Math.max(0, prev.activeWhales - 1) // 确保不会出现负数
+        }));
+        
+        // 从追踪列表中移除该鲸鱼地址
+        setTrackedWhales(prev => prev.filter(addr => addr !== address));
+        
+        // 从完整数据列表中移除
+        setTrackedWhalesData(prev => prev.filter(whale => whale.whaleAddress !== address));
+        
+        console.log(`重点追踪鲸鱼减少，当前数量: ${Math.max(0, statsData.activeWhales - 1)}`);
+      }
+    };
+    
+    // 添加事件监听器
+    window.addEventListener('whaleTracked', handleWhaleTracked);
+    
+    // 清理函数
+    return () => {
+      window.removeEventListener('whaleTracked', handleWhaleTracked);
+    };
+  }, [statsData.activeWhales]); // 依赖于当前的activeWhales值
 
-  // 添加鲸鱼收益率图表时间范围状态
-  const [whalesProfitTimeRange, setWhalesProfitTimeRange] = useState<'day' | 'week' | 'month'>('week');
+  // 加载模拟数据
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      // 设置模拟数据 - 根据正确的鲸鱼分类逻辑
+      const mockSmartWhales = 8;     // 聪明鲸鱼
+      const mockDumbWhales = 4;      // 愚蠢鲸鱼
+      const mockTrackingWhales = 5;  // 追踪鲸鱼(从数据库获取但不单独展示的)
+      // 所有鲸鱼 = 聪明鲸鱼 + 愚蠢鲸鱼 + 追踪鲸鱼
+      const mockTotalWhales = mockSmartWhales + mockDumbWhales + mockTrackingWhales; // 总计17只鲸鱼
+      
+      setStatsData({
+        activeWhales: 0,             // 重点追踪鲸鱼初始为0（用户尚未选择）
+        smartWhales: mockSmartWhales,
+        dumbWhales: mockDumbWhales,
+        successRate: 85.7,
+        totalWhales: mockTotalWhales // 所有鲸鱼 = 聪明鲸鱼(8) + 愚蠢鲸鱼(4) + 追踪鲸鱼(5) = 17
+      });
+      
+      setLoading(false);
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  // 当组件加载时，获取初始数据
+  useEffect(() => {
+    // 初始化状态：所有鲸鱼列表包含所有鲸鱼，重点追踪鲸鱼列表为空
+    const initializeWhaleData = async () => {
+      try {
+        // 从数据湖获取鲸鱼追踪列表数据
+        const response: any = await dataLakeApi.queryTableData('ads', 'ads_whale_tracking_list', 1000);
+        
+        if (Array.isArray(response) && response.length > 0) {
+          console.log('初始化鲸鱼分类：获取到鲸鱼数据', response.length, '条');
+          
+          // 重点追踪鲸鱼列表初始为空（用户尚未选择任何重点追踪的鲸鱼）
+          setTrackedWhales([]);
+          
+          // 统计各类鲸鱼数量
+          const smartWhales = response.filter(item => item.wallet_type === 'SMART').length;
+          const dumbWhales = response.filter(item => item.wallet_type === 'DUMB').length;
+          const trackingWhales = response.filter(item => item.wallet_type === 'TRACKING').length;
+          
+          // 计算所有鲸鱼的总数（聪明鲸鱼 + 愚蠢鲸鱼 + 追踪鲸鱼）
+          const totalWhales = smartWhales + dumbWhales + trackingWhales;
+          
+          setStatsData((prev: any) => ({
+            ...prev,
+            activeWhales: 0, // 重点追踪鲸鱼初始为0（用户尚未选择任何鲸鱼）
+            smartWhales: smartWhales,
+            dumbWhales: dumbWhales,
+            // 所有鲸鱼 = 聪明鲸鱼 + 愚蠢鲸鱼 + 追踪鲸鱼
+            totalWhales: totalWhales
+          }));
+          
+          console.log(`初始化完成：聪明鲸鱼 ${smartWhales} 只，愚蠢鲸鱼 ${dumbWhales} 只，追踪鲸鱼 ${trackingWhales} 只，所有鲸鱼 ${totalWhales} 只，重点追踪鲸鱼 0 只`);
+        } else {
+          console.warn('初始化鲸鱼数据失败：没有获取到鲸鱼数据');
+          
+          // 即使API调用失败，也确保设置默认值
+          setStatsData((prev: any) => ({
+            ...prev,
+            activeWhales: 0,  // 重点追踪鲸鱼（用户选择的）
+            smartWhales: 0,   // 聪明鲸鱼
+            dumbWhales: 0,    // 愚蠢鲸鱼
+            totalWhales: 0    // 所有鲸鱼
+          }));
+          
+          setTrackedWhales([]);
+        }
+      } catch (error) {
+        console.error('初始化鲸鱼数据失败:', error);
+        
+        // 出错时也确保设置默认值
+        setStatsData((prev: any) => ({
+          ...prev,
+          activeWhales: 0,  // 重点追踪鲸鱼（用户选择的）
+          smartWhales: 0,   // 聪明鲸鱼
+          dumbWhales: 0,    // 愚蠢鲸鱼
+          totalWhales: 0    // 所有鲸鱼
+        }));
+        
+        setTrackedWhales([]);
+      }
+    };
+    
+    // 执行初始化
+    initializeWhaleData();
+  }, []);
 
   // 处理点击钱包地址
   const handleWalletClick = (address: string, label: string) => {
-    setSelectedWallet({address, label});
+    setSelectedWallet({ address, label });
     setModalVisible(true);
   };
 
@@ -3579,8 +4033,15 @@ const Dashboard: React.FC = () => {
 
   // 处理点击鲸鱼ID
   const handleWhaleClick = (whaleId: string) => {
-    setSelectedWhaleId(whaleId);
-    setWhaleAddressModalVisible(true);
+    // 从鲸鱼ID提取一个地址（移除WHALE-前缀，保留后面的部分）
+    const whaleAddress = whaleId.replace('WHALE-', '');
+    
+    // 为这个鲸鱼生成一个默认的标签名称
+    const whaleLabel = `鲸鱼钱包 ${whaleId}`;
+    
+    // 直接打开钱包分析模态框
+    setSelectedWallet({ address: whaleAddress, label: whaleLabel });
+    setModalVisible(true);
     setWhaleListModalVisible(false); // 关闭鲸鱼列表模态框
   };
 
@@ -3588,7 +4049,7 @@ const Dashboard: React.FC = () => {
   const getWhaleAddresses = (whaleId: string) => {
     // 这里根据鲸鱼ID返回对应的钱包地址数据
     // 实际应用中，这些数据应该通过API获取
-    const whaleMap: {[key: string]: any[]} = {
+    const whaleMap: { [key: string]: any[] } = {
       'WHALE-0x1234': [
         {
           key: '1',
@@ -3636,159 +4097,15 @@ const Dashboard: React.FC = () => {
           holdingChange: 30000,
           holdingProfit: 260000,
           netProfit: 180000
-        },
-        {
-          key: '3',
-          address: '0x9876...5432',
-          influenceScore: 65,
-          holdingValue: 620000,
-          holdingChange: -8000,
-          holdingProfit: 120000,
-          netProfit: 75000
-        },
-        {
-          key: '4',
-          address: '0x2345...6789',
-          influenceScore: 78,
-          holdingValue: 500000,
-          holdingChange: 12000,
-          holdingProfit: 100000,
-          netProfit: 65000
-        }
-      ],
-      'WHALE-0x8765': [
-        {
-          key: '1',
-          address: '0x8765...4321',
-          influenceScore: 74,
-          holdingValue: 880000,
-          holdingChange: -15000,
-          holdingProfit: 140000,
-          netProfit: 95000
-        },
-        {
-          key: '2',
-          address: '0x1234...5678',
-          influenceScore: 86,
-          holdingValue: 970000,
-          holdingChange: 22000,
-          holdingProfit: 165000,
-          netProfit: 110000
         }
       ]
     };
-    
-    // 为其他鲸鱼ID生成随机数据
-    if (!whaleMap[whaleId]) {
-      const addressCount = Math.floor(Math.random() * 3) + 1; // 1-3个钱包
-      const addresses = [];
-      
-      for (let i = 0; i < addressCount; i++) {
-        // 生成随机地址
-        const randomHex = () => Math.floor(Math.random() * 16).toString(16);
-        const randomAddress = `0x${Array(4).fill(0).map(() => randomHex()).join('')}...${Array(4).fill(0).map(() => randomHex()).join('')}`;
-        
-        const holdingValue = Math.floor(Math.random() * 1500000) + 500000; // 500000-2000000
-        const holdingProfit = Math.floor(Math.random() * 300000) + 50000; // 50000-350000
-        const netProfit = Math.floor(holdingProfit * (0.5 + Math.random() * 0.4)); // 50%-90% of holdingProfit
-        
-        addresses.push({
-          key: (i + 1).toString(),
-          address: randomAddress,
-          influenceScore: Math.floor(Math.random() * 40) + 60, // 60-99
-          holdingValue: holdingValue,
-          holdingChange: Math.floor(Math.random() * 200000) - 100000, // -100000 to 100000
-          holdingProfit: holdingProfit,
-          netProfit: netProfit
-        });
-      }
-      
-      return addresses;
-    }
-    
+
+    // 返回鲸鱼钱包数据，如果不存在则返回空数组
     return whaleMap[whaleId] || [];
   };
 
-  // 模拟数据加载
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      // 模拟数据
-      setStatsData({
-        activeWhales: 5,
-        smartWhales: 8,
-        dumbWhales: 4, 
-        successRate: 85.7,
-      });
-
-      setWhaleData([
-        {
-          key: '1',
-          address: '0x1234...5678',
-          label: '巨鲸A',
-          influenceScore: 86,
-          alertLevel: 'HIGH',
-          recentActivity: '买入3个NFT',
-          holdingValue: 1250000,
-          holdingChange: 25000,
-          holdingProfit: 180000,
-          netProfit: 120000
-        },
-        {
-          key: '2',
-          address: '0x8765...4321',
-          label: '巨鲸B',
-          influenceScore: 74,
-          alertLevel: 'MEDIUM',
-          recentActivity: '卖出5个NFT',
-          holdingValue: 880000,
-          holdingChange: -15000,
-          holdingProfit: 140000,
-          netProfit: 95000
-        },
-        {
-          key: '3',
-          address: '0x5678...1234',
-          label: '巨鲸C',
-          influenceScore: 92,
-          alertLevel: 'HIGH',
-          recentActivity: '买入10个NFT',
-          holdingValue: 1750000,
-          holdingChange: 50000,
-          holdingProfit: 350000,
-          netProfit: 210000
-        },
-        {
-          key: '4',
-          address: '0xabcd...efgh',
-          label: '巨鲸D',
-          influenceScore: 78,
-          alertLevel: 'MEDIUM',
-          recentActivity: '买入2个NFT',
-          holdingValue: 950000,
-          holdingChange: 18000,
-          holdingProfit: 175000,
-          netProfit: 115000
-        },
-        {
-          key: '5',
-          address: '0x9876...5432',
-          label: '巨鲸E',
-          influenceScore: 65,
-          alertLevel: 'LOW',
-          recentActivity: '卖出1个NFT',
-          holdingValue: 620000,
-          holdingChange: -8000,
-          holdingProfit: 85000,
-          netProfit: 55000
-        }
-      ]);
-
-      setLoading(false);
-    }, 1000);
-
-    return () => clearTimeout(timer);
-  }, []);
-
+  // 表格列配置
   const columns = [
     {
       title: <Text style={{ color: 'var(--text-primary)' }}>钱包地址</Text>,
@@ -3796,14 +4113,14 @@ const Dashboard: React.FC = () => {
       key: 'address',
       width: 180,
       render: (address: string, record: any) => (
-        <Text 
-          style={{ 
-            color: 'var(--primary)', 
-            cursor: 'pointer', 
+        <Text
+          style={{
+            color: 'var(--primary)',
+            cursor: 'pointer',
             textShadow: '0 0 8px rgba(24, 144, 255, 0.3)',
             textDecoration: 'underline'
           }}
-          onClick={() => handleWalletClick(address, record.label)}
+          onClick={() => handleWalletClick(address, record.label || '鲸鱼钱包')}
         >
           {address}
         </Text>
@@ -3822,12 +4139,12 @@ const Dashboard: React.FC = () => {
           color = 'var(--warning)';
         }
         return (
-          <Statistic 
-            value={score} 
-            valueStyle={{ fontSize: 16, color }} 
+          <Statistic
+            value={score}
+            valueStyle={{ fontSize: 16, color }}
             suffix={
               <Text style={{ fontSize: 12, color: 'var(--text-secondary)' }}>/100</Text>
-            } 
+            }
           />
         );
       },
@@ -3841,14 +4158,21 @@ const Dashboard: React.FC = () => {
         <Statistic
           value={value}
           precision={0}
-          valueStyle={{ 
-            color: 'var(--warning)', 
-            fontSize: 16, 
+          valueStyle={{
+            color: 'var(--warning)',
+            fontSize: 16,
             textShadow: 'var(--text-shadow-warning)'
           }}
           suffix="$"
         />
       ),
+    },
+    {
+      title: <Text style={{ color: 'var(--text-primary)' }}>持仓变化</Text>,
+      dataIndex: 'holdingChange',
+      key: 'holdingChange',
+      width: 140,
+      render: (change: number) => <HoldingChange value={change} />,
     },
     {
       title: <Text style={{ color: 'var(--text-primary)' }}>持有收益</Text>,
@@ -3859,9 +4183,9 @@ const Dashboard: React.FC = () => {
         <Statistic
           value={value}
           precision={0}
-          valueStyle={{ 
-            color: 'var(--success)', 
-            fontSize: 16, 
+          valueStyle={{
+            color: 'var(--success)',
+            fontSize: 16,
             textShadow: 'var(--text-shadow-success)'
           }}
           prefix={<ArrowUpOutlined />}
@@ -3878,9 +4202,9 @@ const Dashboard: React.FC = () => {
         <Statistic
           value={value}
           precision={0}
-          valueStyle={{ 
-            color: 'var(--success)', 
-            fontSize: 16, 
+          valueStyle={{
+            color: 'var(--success)',
+            fontSize: 16,
             textShadow: 'var(--text-shadow-success)'
           }}
           prefix={<ArrowUpOutlined />}
@@ -3888,74 +4212,7 @@ const Dashboard: React.FC = () => {
         />
       ),
     },
-    {
-      title: <Text style={{ color: 'var(--text-primary)' }}>持仓变化</Text>,
-      dataIndex: 'holdingChange',
-      key: 'holdingChange',
-      width: 140,
-      render: (change: number) => <HoldingChange value={change} />,
-    },
   ];
-
-  // 添加表格样式和动画效果
-  useEffect(() => {
-    const style = document.createElement('style');
-    style.innerHTML = `
-      .ant-table-thead > tr > th {
-        color: var(--text-primary) !important;
-        font-weight: bold !important;
-        border-bottom: 1px solid var(--border-color) !important;
-      }
-      
-      /* 强制设置Statistic组件颜色 */
-      .ant-statistic-content-value {
-        color: inherit !important;
-      }
-      
-      /* 新交易动画效果 */
-      @keyframes newTransaction {
-        0% {
-          background-color: rgba(24, 144, 255, 0.4);
-        }
-        100% {
-          background-color: rgba(24, 144, 255, 0.05);
-        }
-      }
-      
-      .new-transaction-animation {
-        animation: newTransaction 2s ease-out;
-      }
-      
-      /* 模态框样式优化 */
-      .ant-modal-content {
-        background: #001529 !important;
-        border: 1px solid var(--border-color) !important;
-        box-shadow: 0 0 20px var(--border-color) !important;
-      }
-      
-      .ant-modal-header {
-        background: #000c17 !important;
-        border-bottom: 1px solid var(--border-color) !important;
-      }
-      
-      .ant-modal-title {
-        color: var(--text-primary) !important;
-      }
-      
-      .ant-modal-close {
-        color: var(--text-secondary) !important;
-      }
-      
-      .ant-modal-close:hover {
-        color: var(--text-primary) !important;
-      }
-    `;
-    document.head.appendChild(style);
-    
-    return () => {
-      document.head.removeChild(style);
-    };
-  }, []);
 
   if (loading) return <TechLoading />;
 
@@ -3964,7 +4221,7 @@ const Dashboard: React.FC = () => {
       <TechTitle>巨鲸追踪</TechTitle>
       <Row gutter={16} style={{ marginBottom: 24 }}>
         <Col span={6}>
-          <Card 
+          <Card
             className="tech-card"
             hoverable
             bordered={false}
@@ -3980,7 +4237,7 @@ const Dashboard: React.FC = () => {
           </Card>
         </Col>
         <Col span={6}>
-          <Card 
+          <Card
             className="tech-card"
             hoverable
             bordered={false}
@@ -3996,7 +4253,7 @@ const Dashboard: React.FC = () => {
           </Card>
         </Col>
         <Col span={6}>
-          <Card 
+          <Card
             className="tech-card"
             hoverable
             bordered={false}
@@ -4012,7 +4269,7 @@ const Dashboard: React.FC = () => {
           </Card>
         </Col>
         <Col span={6}>
-          <Card 
+          <Card
             className="tech-card"
             hoverable
             bordered={false}
@@ -4021,7 +4278,7 @@ const Dashboard: React.FC = () => {
           >
             <Statistic
               title={<Text style={{ color: 'var(--text-secondary)' }}>所有鲸鱼</Text>}
-              value={35}
+              value={statsData.totalWhales}
               prefix={<UserOutlined style={{ color: 'var(--danger)' }} />}
               valueStyle={{ color: 'var(--danger)', textShadow: 'var(--text-shadow-danger)' }}
             />
@@ -4037,66 +4294,66 @@ const Dashboard: React.FC = () => {
           <Row gutter={[0, 16]}>
             <Col span={24}>
               {/* 前十鲸鱼交易额饼状图 */}
-              <Card 
+              <Card
                 title={
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
                     <div style={{ display: 'flex', alignItems: 'center' }}>
                       <PieChartOutlined style={{ color: 'var(--primary)', marginRight: 8 }} />
-                  <Text style={{ 
-                    color: 'var(--text-primary)', 
-                    fontSize: 16, 
-                    fontWeight: 500 
-                  }}>
-                        鲸鱼交易额Top10
-                  </Text>
+                      <Text style={{
+                        color: 'var(--text-primary)',
+                        fontSize: 16,
+                        fontWeight: 500
+                      }}>
+                        鲸鱼收益额Top10
+                      </Text>
                     </div>
                     <div>
-                      <Radio.Group 
-                        value={whalesVolumeTimeRange} 
+                      <Radio.Group
+                        value={whalesVolumeTimeRange}
                         onChange={(e) => setWhalesVolumeTimeRange(e.target.value)}
                         size="small"
                       >
-                        <Radio.Button value="day" style={{color: whalesVolumeTimeRange === 'day' ? '#fff' : '#1890ff', borderColor: '#1890ff', backgroundColor: whalesVolumeTimeRange === 'day' ? '#1890ff' : 'transparent'}}>当天</Radio.Button>
-                        <Radio.Button value="week" style={{color: whalesVolumeTimeRange === 'week' ? '#fff' : '#1890ff', borderColor: '#1890ff', backgroundColor: whalesVolumeTimeRange === 'week' ? '#1890ff' : 'transparent'}}>近一周</Radio.Button>
-                        <Radio.Button value="month" style={{color: whalesVolumeTimeRange === 'month' ? '#fff' : '#1890ff', borderColor: '#1890ff', backgroundColor: whalesVolumeTimeRange === 'month' ? '#1890ff' : 'transparent'}}>近一月</Radio.Button>
+                        <Radio.Button value="day" style={{ color: whalesVolumeTimeRange === 'day' ? '#fff' : '#1890ff', borderColor: '#1890ff', backgroundColor: whalesVolumeTimeRange === 'day' ? '#1890ff' : 'transparent' }}>当天</Radio.Button>
+                        <Radio.Button value="week" style={{ color: whalesVolumeTimeRange === 'week' ? '#fff' : '#1890ff', borderColor: '#1890ff', backgroundColor: whalesVolumeTimeRange === 'week' ? '#1890ff' : 'transparent' }}>近一周</Radio.Button>
+                        <Radio.Button value="month" style={{ color: whalesVolumeTimeRange === 'month' ? '#fff' : '#1890ff', borderColor: '#1890ff', backgroundColor: whalesVolumeTimeRange === 'month' ? '#1890ff' : 'transparent' }}>近一月</Radio.Button>
                       </Radio.Group>
                     </div>
                   </div>
-                } 
-                className="tech-card" 
+                }
+                className="tech-card"
                 bordered={false}
               >
                 <TopWhalesTradingVolumeChart timeRange={whalesVolumeTimeRange} />
               </Card>
             </Col>
             <Col span={24}>
-              <Card 
+              <Card
                 title={
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
                       <PieChartOutlined style={{ color: '#52c41a', marginRight: 8 }} />
-                    <Text style={{ 
-                      color: 'var(--text-primary)', 
-                      fontSize: 16, 
-                      fontWeight: 500 
-                    }}>
+                      <Text style={{
+                        color: 'var(--text-primary)',
+                        fontSize: 16,
+                        fontWeight: 500
+                      }}>
                         鲸鱼收益率Top10
-                    </Text>
+                      </Text>
                     </div>
                     <div>
-                      <Radio.Group 
-                        value={whalesProfitTimeRange} 
+                      <Radio.Group
+                        value={whalesProfitTimeRange}
                         onChange={(e) => setWhalesProfitTimeRange(e.target.value)}
                         size="small"
                       >
-                        <Radio.Button value="day" style={{color: whalesProfitTimeRange === 'day' ? '#fff' : '#52c41a', borderColor: '#52c41a', backgroundColor: whalesProfitTimeRange === 'day' ? '#52c41a' : 'transparent'}}>当天</Radio.Button>
-                        <Radio.Button value="week" style={{color: whalesProfitTimeRange === 'week' ? '#fff' : '#52c41a', borderColor: '#52c41a', backgroundColor: whalesProfitTimeRange === 'week' ? '#52c41a' : 'transparent'}}>近一周</Radio.Button>
-                        <Radio.Button value="month" style={{color: whalesProfitTimeRange === 'month' ? '#fff' : '#52c41a', borderColor: '#52c41a', backgroundColor: whalesProfitTimeRange === 'month' ? '#52c41a' : 'transparent'}}>近一月</Radio.Button>
+                        <Radio.Button value="day" style={{ color: whalesProfitTimeRange === 'day' ? '#fff' : '#52c41a', borderColor: '#52c41a', backgroundColor: whalesProfitTimeRange === 'day' ? '#52c41a' : 'transparent' }}>当天</Radio.Button>
+                        <Radio.Button value="week" style={{ color: whalesProfitTimeRange === 'week' ? '#fff' : '#52c41a', borderColor: '#52c41a', backgroundColor: whalesProfitTimeRange === 'week' ? '#52c41a' : 'transparent' }}>近一周</Radio.Button>
+                        <Radio.Button value="month" style={{ color: whalesProfitTimeRange === 'month' ? '#fff' : '#52c41a', borderColor: '#52c41a', backgroundColor: whalesProfitTimeRange === 'month' ? '#52c41a' : 'transparent' }}>近一月</Radio.Button>
                       </Radio.Group>
                     </div>
                   </div>
-                } 
-                className="tech-card" 
+                }
+                className="tech-card"
                 bordered={false}
               >
                 <WhalesProfitRateChart timeRange={whalesProfitTimeRange} />
@@ -4108,57 +4365,57 @@ const Dashboard: React.FC = () => {
 
       <Row gutter={16} style={{ marginBottom: 24 }}>
         <Col span={24}>
-          <Card 
+          <Card
             title={
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
                   <BarChartOutlined style={{ color: 'var(--primary)', marginRight: 8 }} />
-                <Text style={{ 
-                  color: 'var(--text-primary)', 
-                  fontSize: 16, 
-                  fontWeight: 500 
-                }}>
+                  <Text style={{
+                    color: 'var(--text-primary)',
+                    fontSize: 16,
+                    fontWeight: 500
+                  }}>
                     鲸鱼{isInflow ? '净流入' : '净流出'}Top10收藏集
-                </Text>
+                  </Text>
                 </div>
                 <div>
                   <Space>
                     {/* 添加流入/流出切换按钮 */}
-                    <Radio.Group 
-                      value={isInflow ? 'inflow' : 'outflow'} 
+                    <Radio.Group
+                      value={isInflow ? 'inflow' : 'outflow'}
                       onChange={(e) => setIsInflow(e.target.value === 'inflow')}
                       size="small"
                       style={{ marginRight: 24 }}
                     >
-                      <Radio.Button value="inflow" style={{color: isInflow ? '#fff' : '#1890ff', borderColor: '#1890ff', backgroundColor: isInflow ? '#1890ff' : 'transparent'}}>净流入</Radio.Button>
-                      <Radio.Button value="outflow" style={{color: !isInflow ? '#fff' : '#1890ff', borderColor: '#1890ff', backgroundColor: !isInflow ? '#1890ff' : 'transparent'}}>净流出</Radio.Button>
+                      <Radio.Button value="inflow" style={{ color: isInflow ? '#fff' : '#1890ff', borderColor: '#1890ff', backgroundColor: isInflow ? '#1890ff' : 'transparent' }}>净流入</Radio.Button>
+                      <Radio.Button value="outflow" style={{ color: !isInflow ? '#fff' : '#1890ff', borderColor: '#1890ff', backgroundColor: !isInflow ? '#1890ff' : 'transparent' }}>净流出</Radio.Button>
                     </Radio.Group>
 
-                    <Radio.Group 
-                      value={inflowWhaleType} 
+                    <Radio.Group
+                      value={inflowWhaleType}
                       onChange={(e) => setInflowWhaleType(e.target.value)}
                       size="small"
                       style={{ marginRight: 24 }}
                     >
-                      <Radio.Button value="all" style={{color: inflowWhaleType === 'all' ? '#fff' : '#1890ff', borderColor: '#1890ff', backgroundColor: inflowWhaleType === 'all' ? '#1890ff' : 'transparent'}}>所有鲸鱼</Radio.Button>
-                      <Radio.Button value="smart" style={{color: inflowWhaleType === 'smart' ? '#fff' : '#52c41a', borderColor: '#52c41a', backgroundColor: inflowWhaleType === 'smart' ? '#52c41a' : 'transparent'}}>聪明鲸鱼</Radio.Button>
-                      <Radio.Button value="dumb" style={{color: inflowWhaleType === 'dumb' ? '#fff' : '#f5222d', borderColor: '#f5222d', backgroundColor: inflowWhaleType === 'dumb' ? '#f5222d' : 'transparent'}}>愚蠢鲸鱼</Radio.Button>
+                      <Radio.Button value="all" style={{ color: inflowWhaleType === 'all' ? '#fff' : '#1890ff', borderColor: '#1890ff', backgroundColor: inflowWhaleType === 'all' ? '#1890ff' : 'transparent' }}>所有鲸鱼</Radio.Button>
+                      <Radio.Button value="smart" style={{ color: inflowWhaleType === 'smart' ? '#fff' : '#52c41a', borderColor: '#52c41a', backgroundColor: inflowWhaleType === 'smart' ? '#52c41a' : 'transparent' }}>聪明鲸鱼</Radio.Button>
+                      <Radio.Button value="dumb" style={{ color: inflowWhaleType === 'dumb' ? '#fff' : '#f5222d', borderColor: '#f5222d', backgroundColor: inflowWhaleType === 'dumb' ? '#f5222d' : 'transparent' }}>愚蠢鲸鱼</Radio.Button>
                     </Radio.Group>
 
-                    <Radio.Group 
-                      value={inflowTimeRange} 
+                    <Radio.Group
+                      value={inflowTimeRange}
                       onChange={(e) => setInflowTimeRange(e.target.value)}
                       size="small"
                     >
-                      <Radio.Button value="day" style={{color: inflowTimeRange === 'day' ? '#fff' : '#1890ff', borderColor: '#1890ff', backgroundColor: inflowTimeRange === 'day' ? '#1890ff' : 'transparent'}}>当天</Radio.Button>
-                      <Radio.Button value="week" style={{color: inflowTimeRange === 'week' ? '#fff' : '#1890ff', borderColor: '#1890ff', backgroundColor: inflowTimeRange === 'week' ? '#1890ff' : 'transparent'}}>近一周</Radio.Button>
-                      <Radio.Button value="month" style={{color: inflowTimeRange === 'month' ? '#fff' : '#1890ff', borderColor: '#1890ff', backgroundColor: inflowTimeRange === 'month' ? '#1890ff' : 'transparent'}}>近一月</Radio.Button>
+                      <Radio.Button value="day" style={{ color: inflowTimeRange === 'day' ? '#fff' : '#1890ff', borderColor: '#1890ff', backgroundColor: inflowTimeRange === 'day' ? '#1890ff' : 'transparent' }}>当天</Radio.Button>
+                      <Radio.Button value="week" style={{ color: inflowTimeRange === 'week' ? '#fff' : '#1890ff', borderColor: '#1890ff', backgroundColor: inflowTimeRange === 'week' ? '#1890ff' : 'transparent' }}>近一周</Radio.Button>
+                      <Radio.Button value="month" style={{ color: inflowTimeRange === 'month' ? '#fff' : '#1890ff', borderColor: '#1890ff', backgroundColor: inflowTimeRange === 'month' ? '#1890ff' : 'transparent' }}>近一月</Radio.Button>
                     </Radio.Group>
                   </Space>
                 </div>
               </div>
-            } 
-            className="tech-card" 
+            }
+            className="tech-card"
             bordered={false}
             style={{ marginBottom: 24 }}
           >
@@ -4177,6 +4434,8 @@ const Dashboard: React.FC = () => {
         onClose={() => setWhaleListModalVisible(false)}
         type={whaleListType}
         onSelectWhale={handleWhaleClick}
+        trackedWhales={trackedWhales}
+        trackedWhalesData={trackedWhalesData} // 添加完整的鲸鱼数据
       />
 
       {/* 鲸鱼钱包模态框 */}
@@ -4197,20 +4456,20 @@ const Dashboard: React.FC = () => {
           className="tech-modal"
           style={{ top: 20 }}
         >
-          <Table 
-            columns={columns} 
-            dataSource={getWhaleAddresses(selectedWhaleId)} 
-            pagination={false} 
+          <Table
+            columns={columns}
+            dataSource={getWhaleAddresses(selectedWhaleId)}
+            pagination={false}
             rowClassName="tech-table-row"
             style={{ background: 'transparent' }}
-            scroll={{ x: 880 }}
+            scroll={{ x: 1080 }}
           />
         </Modal>
       )}
 
       {/* 钱包分析模态框 */}
       {selectedWallet && (
-        <WalletAnalysisModal 
+        <WalletAnalysisModal
           visible={modalVisible}
           onClose={() => setModalVisible(false)}
           walletAddress={selectedWallet.address}

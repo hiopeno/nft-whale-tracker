@@ -24,7 +24,7 @@ public class WhaleTrackingController {
      */
     @GetMapping("/transactions")
     public ResponseEntity<List<Map<String, Object>>> getTransactions(
-            @RequestParam(defaultValue = "100") int limit) {
+            @RequestParam(defaultValue = "1000") int limit) {
         
         log.debug("请求获取鲸鱼交易列表: limit={}", limit);
         
@@ -48,7 +48,7 @@ public class WhaleTrackingController {
      */
     @GetMapping("/tracking-list")
     public ResponseEntity<List<Map<String, Object>>> getWhaleTrackingList(
-            @RequestParam(defaultValue = "100") int limit) {
+            @RequestParam(defaultValue = "1000") int limit) {
         
         log.debug("请求获取鲸鱼追踪列表: limit={}", limit);
         
